@@ -82,7 +82,7 @@ public class VectorService
             (uint)r.Payload["chunk_index"].IntegerValue,
             r.Payload["chunk_text"].StringValue,
             r.Payload["heading_path"].StringValue,
-            r.Score
+            1f / (1f + (1f - r.Score))
         )).ToList();
     }
 
