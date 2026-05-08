@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from "react"
-import { open } from "@tauri-apps/plugin-dialog"
-import { invoke } from "@tauri-apps/api/core"
 import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
-import { copyFile, listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile } from "@/commands/fs"
+import { copyDirectory, listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
@@ -72,97 +70,26 @@ export function SourcesView() {
 
   async function handleImport() {
     if (!project) return
-
-    const selected = await open({
-      multiple: true,
-      title: "Import Source Files",
-      filters: [
-        {
-          name: "Documents",
-          extensions: [
-            "md", "mdx", "txt", "rtf", "pdf",
-            "html", "htm", "xml",
-            "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-            "odt", "ods", "odp", "epub", "pages", "numbers", "key",
-          ],
-        },
-        {
-          name: "Data",
-          extensions: ["json", "jsonl", "csv", "tsv", "yaml", "yml", "ndjson"],
-        },
-        {
-          name: "Code",
-          extensions: [
-            "py", "js", "ts", "jsx", "tsx", "rs", "go", "java",
-            "c", "cpp", "h", "rb", "php", "swift", "sql", "sh",
-          ],
-        },
-        {
-          name: "Images",
-          extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "avif", "heic"],
-        },
-        {
-          name: "Media",
-          extensions: ["mp4", "webm", "mov", "avi", "mkv", "mp3", "wav", "ogg", "flac", "m4a"],
-        },
-        { name: "All Files", extensions: ["*"] },
-      ],
-    })
-
-    if (!selected || selected.length === 0) return
-
-    setImporting(true)
-    const pp = normalizePath(project.path)
-    const paths = Array.isArray(selected) ? selected : [selected]
-
-    const importedPaths: string[] = []
-    for (const sourcePath of paths) {
-      const originalName = getFileName(sourcePath) || "unknown"
-      const destPath = await getUniqueDestPath(`${pp}/raw/sources`, originalName)
-      try {
-        await copyFile(sourcePath, destPath)
-        importedPaths.push(destPath)
-        // Pre-process file (extract text from PDF, etc.) for instant preview later
-        preprocessFile(destPath).catch(() => {})
-      } catch (err) {
-        console.error(`Failed to import ${originalName}:`, err)
-      }
-    }
-
-    setImporting(false)
-    await loadSources()
-
-    // Enqueue for serial ingest (runs in background via ingest queue)
-    if (hasUsableLlm(llmConfig)) {
-      for (const destPath of importedPaths) {
-        enqueueIngest(project.id, destPath).catch((err) =>
-          console.error(`Failed to enqueue ingest:`, err)
-        )
-      }
-    }
+    // File picker dialog not available in browser mode.
+    // Please place files directly in the project's raw/sources/ folder
+    // and click Refresh to update the list.
+    window.alert("File import via dialog is not available in browser mode.\nPlease copy files directly into the project's raw/sources/ folder, then click Refresh.")
   }
 
   async function handleImportFolder() {
     if (!project) return
-
-    const selected = await open({
-      directory: true,
-      title: "Import Source Folder",
-    })
-
-    if (!selected || typeof selected !== "string") return
+    // Folder picker dialog not available in browser mode.
+    const selected = window.prompt("Enter the source folder path to import:")
+    if (!selected || !selected.trim()) return
 
     setImporting(true)
     const pp = normalizePath(project.path)
-    const folderName = getFileName(selected) || "imported"
+    const folderName = getFileName(selected.trim()) || "imported"
     const destDir = `${pp}/raw/sources/${folderName}`
 
     try {
       // Recursively copy the folder
-      const copiedFiles: string[] = await invoke("copy_directory", {
-        source: selected,
-        destination: destDir,
-      })
+      const copiedFiles: string[] = await copyDirectory(selected.trim(), destDir)
 
       console.log(`[Folder Import] Copied ${copiedFiles.length} files from ${folderName}`)
 
@@ -495,48 +422,6 @@ export function SourcesView() {
   )
 }
 
-/**
- * Generate a unique destination path. If file already exists, adds date/counter suffix.
- * "file.pdf" → "file.pdf" (first time)
- * "file.pdf" → "file-20260406.pdf" (conflict)
- * "file.pdf" → "file-20260406-2.pdf" (second conflict same day)
- */
-async function getUniqueDestPath(dir: string, fileName: string): Promise<string> {
-  const basePath = `${dir}/${fileName}`
-
-  // Check if file exists by trying to read it
-  try {
-    await readFile(basePath)
-  } catch {
-    // File doesn't exist — use original name
-    return basePath
-  }
-
-  // File exists — add date suffix
-  const ext = fileName.includes(".") ? fileName.slice(fileName.lastIndexOf(".")) : ""
-  const nameWithoutExt = ext ? fileName.slice(0, -ext.length) : fileName
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-
-  const withDate = `${dir}/${nameWithoutExt}-${date}${ext}`
-  try {
-    await readFile(withDate)
-  } catch {
-    return withDate
-  }
-
-  // Date suffix also exists — add counter
-  for (let i = 2; i <= 99; i++) {
-    const withCounter = `${dir}/${nameWithoutExt}-${date}-${i}${ext}`
-    try {
-      await readFile(withCounter)
-    } catch {
-      return withCounter
-    }
-  }
-
-  // Shouldn't happen, but fallback
-  return `${dir}/${nameWithoutExt}-${date}-${Date.now()}${ext}`
-}
 
 function filterTree(nodes: FileNode[]): FileNode[] {
   return nodes

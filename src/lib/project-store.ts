@@ -5,9 +5,7 @@ const STORE_NAME = "app-state.json"
 const RECENT_PROJECTS_KEY = "recentProjects"
 const LAST_PROJECT_KEY = "lastProject"
 
-const IS_TAURI = typeof window !== "undefined" && "__TAURI__" in window
-
-// localStorage-backed store that mirrors the Tauri plugin-store interface
+// localStorage-backed store
 class LocalStore {
   private prefix: string
   constructor(name: string) { this.prefix = `llmwiki:store:${name}:` }
@@ -26,10 +24,8 @@ class LocalStore {
   async save(): Promise<void> { /* localStorage writes are synchronous */ }
 }
 
-async function getStore() {
-  if (!IS_TAURI) return new LocalStore(STORE_NAME)
-  const { load } = await import("@tauri-apps/plugin-store")
-  return load(STORE_NAME, { autoSave: true, defaults: {} })
+function getStore() {
+  return new LocalStore(STORE_NAME)
 }
 
 export async function getRecentProjects(): Promise<WikiProject[]> {

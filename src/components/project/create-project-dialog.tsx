@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { open } from "@tauri-apps/plugin-dialog"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
@@ -36,15 +35,8 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
   const [creating, setCreating] = useState(false)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
 
-  async function handleBrowse() {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Select Parent Directory",
-    })
-    if (selected) {
-      setPath(selected)
-    }
+  function handleBrowse() {
+    // File dialog not available in browser mode — please type the path manually.
   }
 
   async function handleCreate() {

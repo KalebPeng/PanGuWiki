@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from "react"
-import { convertFileSrc } from "@tauri-apps/api/core"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
@@ -56,13 +55,12 @@ export function FilePreview({ filePath, textContent }: FilePreviewProps) {
 }
 
 function ImagePreview({ filePath, fileName }: { filePath: string; fileName: string }) {
-  const src = convertFileSrc(filePath)
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 text-xs text-muted-foreground">{filePath}</div>
       <div className="flex flex-1 items-center justify-center overflow-auto rounded-lg bg-muted/30">
         <img
-          src={src}
+          src={filePath}
           alt={fileName}
           className="max-h-full max-w-full object-contain"
         />
@@ -72,13 +70,12 @@ function ImagePreview({ filePath, fileName }: { filePath: string; fileName: stri
 }
 
 function VideoPreview({ filePath, fileName }: { filePath: string; fileName: string }) {
-  const src = convertFileSrc(filePath)
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 text-xs text-muted-foreground">{filePath}</div>
       <div className="flex flex-1 items-center justify-center overflow-auto rounded-lg bg-black">
         <video
-          src={src}
+          src={filePath}
           controls
           className="max-h-full max-w-full"
         >
@@ -90,13 +87,12 @@ function VideoPreview({ filePath, fileName }: { filePath: string; fileName: stri
 }
 
 function AudioPreview({ filePath, fileName }: { filePath: string; fileName: string }) {
-  const src = convertFileSrc(filePath)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
       <div className="text-xs text-muted-foreground">{filePath}</div>
       <Music className="h-16 w-16 text-muted-foreground/50" />
       <p className="text-sm font-medium">{fileName}</p>
-      <audio src={src} controls className="w-full max-w-md">
+      <audio src={filePath} controls className="w-full max-w-md">
         <track kind="captions" label={fileName} />
       </audio>
     </div>

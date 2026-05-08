@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { open } from "@tauri-apps/plugin-dialog"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
@@ -333,14 +332,10 @@ function App() {
   }
 
   async function handleOpenProject() {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Open Wiki Project",
-    })
-    if (!selected) return
+    const selected = window.prompt("Enter the wiki project folder path:")
+    if (!selected || !selected.trim()) return
     try {
-      const proj = await openProject(selected)
+      const proj = await openProject(selected.trim())
       await handleProjectOpened(proj)
     } catch (err) {
       window.alert(`Failed to open project: ${err}`)

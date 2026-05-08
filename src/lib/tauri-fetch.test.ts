@@ -1,17 +1,9 @@
 /**
- * Node-fallback contract for tauri-fetch.
+ * Contract tests for tauri-fetch's getHttpFetch / isFetchNetworkError.
  *
- * In production (Tauri webview) `getHttpFetch()` returns the
- * `@tauri-apps/plugin-http` fetch so CORS-unfriendly endpoints work.
- * In tests / SSR / storybook `window` is undefined and we must route
- * through `globalThis.fetch` instead.
- *
- * A previous implementation `.catch()`ed the dynamic import — which
- * never fires because the import SUCCEEDS under Node but the plugin's
- * internals touch `window` later at call time. The fix is to detect
- * the Node env BEFORE importing. This test pins that behavior so the
- * fallback doesn't regress silently (you'd only notice via a vitest
- * run crash with "window is not defined").
+ * `getHttpFetch()` now always returns the platform's native
+ * `globalThis.fetch`. These tests pin the caching and error-detection
+ * behaviors.
  */
 import { describe, it, expect } from "vitest"
 import { getHttpFetch, isFetchNetworkError } from "./tauri-fetch"

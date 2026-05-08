@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, XCircle } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { invoke } from "@tauri-apps/api/core"
+import { httpGet } from "@/api/dotnet-client"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useWikiStore, type ProviderOverride, type ReasoningConfig, type ReasoningMode } from "@/stores/wiki-store"
@@ -512,7 +512,7 @@ function ClaudeCliStatusPill() {
   async function detect() {
     setState("loading")
     try {
-      const r = await invoke<DetectResult>("claude_cli_detect")
+      const r = await httpGet<DetectResult>('/api/claude/detect')
       setResult(r)
       setState(r.installed ? "ok" : "err")
     } catch (e) {

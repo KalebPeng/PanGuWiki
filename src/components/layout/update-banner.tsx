@@ -1,7 +1,6 @@
 import { useCallback } from "react"
 import { Sparkles, X, Download } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { openUrl } from "@tauri-apps/plugin-opener"
 import { useUpdateStore, shouldShowUpdateBanner } from "@/stores/update-store"
 import { saveUpdateCheckState } from "@/lib/project-store"
 import { toLatestReleaseUrl } from "@/lib/update-check"
@@ -32,19 +31,9 @@ export function UpdateBanner() {
   const visible = useUpdateStore((s) => shouldShowUpdateBanner(s))
   const result = useUpdateStore((s) => s.lastResult)
 
-  const handleOpen = useCallback(async () => {
+  const handleOpen = useCallback(() => {
     if (!result || result.kind !== "available") return
-    // Send the user to `/releases/latest`, NOT the tag-specific
-    // page from `release.html_url`. /latest always follows GitHub's
-    // redirect to whatever is currently the most recent release —
-    // robust to (a) a newer release shipping between notification
-    // and click, and (b) the bare `/releases` listing's default
-    // sort not putting newest at the top.
-    try {
-      await openUrl(toLatestReleaseUrl(result.release.html_url))
-    } catch (err) {
-      console.error("[update-banner] openUrl failed:", err)
-    }
+    window.open(toLatestReleaseUrl(result.release.html_url), '_blank')
   }, [result])
 
   const handleDismiss = useCallback(async () => {

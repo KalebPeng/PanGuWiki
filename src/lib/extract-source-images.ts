@@ -13,7 +13,7 @@
  * captioning lands, the same helper grows a `caption` field per
  * image and the markdown line uses that instead.
  */
-import { invoke } from "@tauri-apps/api/core"
+import { httpPost } from "@/api/dotnet-client"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 
 /** Mirrors `commands::extract_images::SavedImage` on the Rust side. */
@@ -71,18 +71,9 @@ export async function extractAndSaveSourceImages(
   const destDir = `${pp}/wiki/media/${slug}`
   const relTo = `${pp}/wiki`
 
+  const endpoint = isPdf ? '/api/extract/pdf-images' : '/api/extract/office-images'
   try {
-    const images = await invoke<unknown[]>(
-      isPdf ? "extract_and_save_pdf_images_cmd" : "extract_and_save_office_images_cmd",
-      { sourcePath: sp, destDir, relTo },
-    )
-    // Rust's `SavedImage` is `#[serde(rename_all = "camelCase")]`,
-    // so the wire format uses `relPath` / `absPath` / `mimeType`.
-    // (Note: Tauri's IPC auto-camelCase applies only to command
-    // PARAMETER names, never to return-value field names — without
-    // the explicit serde attribute on the Rust struct, this filter
-    // would drop every item and return `[]` even when extraction
-    // wrote images to disk. We had that bug.)
+    const images = await httpPost<unknown[]>(endpoint, { sourcePath: sp, destDir, relTo })
     return images
       .filter((it): it is SavedImage => {
         if (!it || typeof it !== "object") return false

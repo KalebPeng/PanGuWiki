@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { Download, RefreshCw, CheckCircle2, Sparkles } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { openUrl } from "@tauri-apps/plugin-opener"
 import { clipServerStatus } from "@/commands/fs"
 import { Button } from "@/components/ui/button"
 import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
@@ -183,12 +182,8 @@ export function AboutSection() {
           <a
             className="cursor-pointer underline underline-offset-2 hover:text-primary"
             href="https://github.com/nashsu/llm_wiki"
-            onClick={(e) => {
-              e.preventDefault()
-              void openUrl("https://github.com/nashsu/llm_wiki").catch((err) => {
-                console.error("[about] openUrl failed:", err)
-              })
-            }}
+            target="_blank"
+            rel="noopener noreferrer"
           >
             github.com/nashsu/llm_wiki
           </a>
@@ -219,30 +214,8 @@ function UpdateAvailableBanner({
   // payload. Same rationale as in the top banner — see
   // `toLatestReleaseUrl` for details.
   const targetUrl = toLatestReleaseUrl(releaseUrl)
-  const handleOpen = async () => {
-    // Tauri 2's webview does NOT auto-delegate `window.open()` to the
-    // system browser — `tauri-plugin-opener` is the official way to
-    // launch the user's default browser. The Rust plugin is
-    // registered in `src-tauri/src/lib.rs` and `opener:default`
-    // permission is granted in capabilities/default.json.
-    //
-    // Fail-soft: if the plugin call rejects (e.g. URL blocked by a
-    // future capability tightening), fall back to copying the URL
-    // to the clipboard so the user can paste it into a browser
-    // manually instead of seeing a silently broken button.
-    try {
-      await openUrl(targetUrl)
-    } catch (err) {
-      console.error("[update-banner] openUrl failed:", err)
-      try {
-        await navigator.clipboard.writeText(targetUrl)
-        // eslint-disable-next-line no-alert
-        alert(`Could not open browser. URL copied to clipboard:\n${targetUrl}`)
-      } catch {
-        // eslint-disable-next-line no-alert
-        alert(`Could not open browser. Visit:\n${targetUrl}`)
-      }
-    }
+  const handleOpen = () => {
+    window.open(targetUrl, '_blank')
   }
 
   const preview = releaseBody.slice(0, 400)

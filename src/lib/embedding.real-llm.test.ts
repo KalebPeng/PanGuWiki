@@ -28,13 +28,17 @@ import { describe, it, expect, vi, beforeAll } from "vitest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 
-// A scriptable `invoke` stub so individual tests can (a) capture what
-// embedPage tries to write to LanceDB, and (b) swap in an in-memory
-// implementation of vector_search_chunks so we can exercise
-// searchByEmbedding end-to-end without a real LanceDB instance.
-const mockInvoke = vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>()
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: unknown) => mockInvoke(cmd, args),
+// Mock the .NET HTTP client used by embedding.ts for vector operations.
+// httpPost handles vector_upsert_chunks and vector_search_chunks.
+// httpGet handles vector_count_chunks, vector_legacy_row_count.
+// httpDelete handles vector_delete_page and vector_drop_legacy.
+const mockVectorPost = vi.fn<(path: string, body?: unknown) => Promise<unknown>>()
+const mockVectorGet = vi.fn<(path: string) => Promise<unknown>>()
+const mockVectorDelete = vi.fn<(path: string) => Promise<unknown>>()
+vi.mock("@/api/dotnet-client", () => ({
+  httpPost: (path: string, body?: unknown) => mockVectorPost(path, body),
+  httpGet: (path: string) => mockVectorGet(path),
+  httpDelete: (path: string) => mockVectorDelete(path),
 }))
 
 vi.mock("@/commands/fs", () => ({
@@ -575,40 +579,39 @@ describe("real-embedding RAG pipeline — multi-page retrieval", () => {
   beforeAll(async () => {
     if (!ENABLED) return
     try {
-      mockInvoke.mockReset()
+      mockVectorPost.mockReset()
       // Default handler: upsert captures into our in-memory store,
-      // search delegates to cosine-sim over that store. No other
-      // Tauri commands are called by the pipeline.
-      mockInvoke.mockImplementation(async (cmd, args) => {
-        if (cmd === "vector_upsert_chunks") {
-          const payload = args as {
+      // search delegates to cosine-sim over that store.
+      mockVectorPost.mockImplementation(async (path: string, body?: unknown) => {
+        if (path === "/api/vector/chunks/upsert") {
+          const payload = body as {
+            projectPath: string
             pageId: string
             chunks: Array<{
-              chunk_index: number
-              chunk_text: string
-              heading_path: string
+              chunkIndex: number
+              chunkText: string
+              headingPath: string
               embedding: number[]
             }>
           }
-          // Delete existing chunks for this page, then append. Mirrors
-          // the Rust side's delete-then-add semantics.
           for (let i = CHUNK_STORE.length - 1; i >= 0; i--) {
             if (CHUNK_STORE[i].page_id === payload.pageId) CHUNK_STORE.splice(i, 1)
           }
           for (const c of payload.chunks) {
             CHUNK_STORE.push({
-              chunk_id: `${payload.pageId}#${c.chunk_index}`,
+              chunk_id: `${payload.pageId}#${c.chunkIndex}`,
               page_id: payload.pageId,
-              chunk_index: c.chunk_index,
-              chunk_text: c.chunk_text,
-              heading_path: c.heading_path,
+              chunk_index: c.chunkIndex,
+              chunk_text: c.chunkText,
+              heading_path: c.headingPath,
               embedding: c.embedding,
             })
           }
           return undefined
         }
-        if (cmd === "vector_search_chunks") {
-          const { queryEmbedding, topK } = args as {
+        if (path === "/api/vector/chunks/search") {
+          const { queryEmbedding, topK } = body as {
+            projectPath: string
             queryEmbedding: number[]
             topK: number
           }

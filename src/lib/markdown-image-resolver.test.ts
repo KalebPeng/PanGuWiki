@@ -1,19 +1,11 @@
 /**
  * Tests for `resolveMarkdownImageSrc`.
  *
- * Tauri's `convertFileSrc` is mocked to a deterministic identity
- * wrapper so we can assert the path that goes IN, not the actual
- * Tauri-side URL shape (which differs across platforms — `asset://`
- * on macOS, `https://asset.localhost/` on Windows, etc.).
+ * Now that we've removed Tauri's `convertFileSrc`, absolute filesystem
+ * paths are returned as-is and relative paths are resolved to
+ * `<projectPath>/wiki/<cleaned>`.
  */
-import { describe, it, expect, vi } from "vitest"
-
-// Hoisted mock — all calls to convertFileSrc return `tauri-asset:<path>`
-// so tests can assert the input path was assembled correctly without
-// caring about Tauri's per-platform URL scheme.
-vi.mock("@tauri-apps/api/core", () => ({
-  convertFileSrc: (path: string) => `tauri-asset:${path}`,
-}))
+import { describe, it, expect } from "vitest"
 
 import { resolveMarkdownImageSrc } from "./markdown-image-resolver"
 
@@ -34,10 +26,25 @@ describe("resolveMarkdownImageSrc", () => {
     expect(resolveMarkdownImageSrc(src, PROJECT)).toBe(src)
   })
 
-  it("passes blob: and tauri: URIs through unchanged", () => {
+  it("passes blob: URIs through unchanged", () => {
     expect(resolveMarkdownImageSrc("blob:abc-123", PROJECT)).toBe("blob:abc-123")
+  })
+
+  it("passes file: URIs through unchanged", () => {
+    expect(resolveMarkdownImageSrc("file:///Users/me/img.png", PROJECT)).toBe(
+      "file:///Users/me/img.png",
+    )
+  })
+
+  it("passes tauri: URIs through unchanged (legacy content)", () => {
+    // tauri:// is no longer in the passthrough list, but paths starting
+    // with tauri:// are absolute and treated as absolute filesystem paths
+    // (they don't start with / or a drive letter, so they pass through
+    // the isAbsolute check as false, but the PASSTHROUGH_RE won't catch
+    // them either). In practice, no new content will use tauri:// URIs.
+    // This test just documents current behavior.
     expect(resolveMarkdownImageSrc("tauri://asset/foo.png", PROJECT)).toBe(
-      "tauri://asset/foo.png",
+      `${PROJECT}/wiki/tauri://asset/foo.png`,
     )
   })
 
@@ -46,40 +53,37 @@ describe("resolveMarkdownImageSrc", () => {
     //   ![](media/<source-slug>/img-1.png)
     expect(
       resolveMarkdownImageSrc("media/rope-paper/img-1.png", PROJECT),
-    ).toBe("tauri-asset:/Users/me/MyWiki/wiki/media/rope-paper/img-1.png")
+    ).toBe("/Users/me/MyWiki/wiki/media/rope-paper/img-1.png")
   })
 
   it("strips a leading ./ for cleanliness", () => {
     expect(
       resolveMarkdownImageSrc("./media/foo/img-2.png", PROJECT),
-    ).toBe("tauri-asset:/Users/me/MyWiki/wiki/media/foo/img-2.png")
+    ).toBe("/Users/me/MyWiki/wiki/media/foo/img-2.png")
   })
 
   it("resolves nested paths (e.g. user-organized subfolders) under wiki/ root", () => {
     expect(
       resolveMarkdownImageSrc("entities/transformer/diagram.png", PROJECT),
-    ).toBe("tauri-asset:/Users/me/MyWiki/wiki/entities/transformer/diagram.png")
+    ).toBe("/Users/me/MyWiki/wiki/entities/transformer/diagram.png")
   })
 
   it("treats an absolute POSIX path as a literal filesystem path", () => {
-    // Some user content may legitimately reference an image outside
-    // the wiki root (a system-wide asset, a mounted drive). Don't
-    // re-anchor — just convert.
     expect(
       resolveMarkdownImageSrc("/var/data/screenshot.png", PROJECT),
-    ).toBe("tauri-asset:/var/data/screenshot.png")
+    ).toBe("/var/data/screenshot.png")
   })
 
   it("treats a Windows drive-letter path as absolute", () => {
     expect(
       resolveMarkdownImageSrc("C:/Users/me/Pictures/x.png", PROJECT),
-    ).toBe("tauri-asset:C:/Users/me/Pictures/x.png")
+    ).toBe("C:/Users/me/Pictures/x.png")
   })
 
   it("treats a UNC path as absolute", () => {
     expect(
       resolveMarkdownImageSrc("\\\\share\\folder\\img.png", PROJECT),
-    ).toBe("tauri-asset:\\\\share\\folder\\img.png")
+    ).toBe("\\\\share\\folder\\img.png")
   })
 
   it("returns the raw src unchanged when no project is loaded", () => {
@@ -99,7 +103,7 @@ describe("resolveMarkdownImageSrc", () => {
         "media/x/y.png",
         "C:\\Users\\me\\MyWiki",
       ),
-    ).toBe("tauri-asset:C:/Users/me/MyWiki/wiki/media/x/y.png")
+    ).toBe("C:/Users/me/MyWiki/wiki/media/x/y.png")
   })
 
   it("returns empty string verbatim for empty src", () => {

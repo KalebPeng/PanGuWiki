@@ -19,9 +19,6 @@
  */
 import { describe, it, expect, vi } from "vitest"
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue(undefined),
-}))
 vi.mock("@/commands/fs", () => ({
   readFile: vi.fn(),
   listDirectory: vi.fn(),

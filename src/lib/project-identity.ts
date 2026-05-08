@@ -16,10 +16,8 @@
 import { readFile, writeFile } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 
-const STORE_NAME = "app-state.json"
 const REGISTRY_KEY = "projectRegistry"
 
-const IS_TAURI = typeof window !== "undefined" && "__TAURI__" in window
 
 export interface ProjectIdentity {
   id: string
@@ -68,38 +66,19 @@ export async function ensureProjectId(projectPath: string): Promise<string> {
   return identity.id
 }
 
-// ── Global registry (Tauri plugin-store or localStorage fallback) ─────────
-
-async function getStore() {
-  const { load } = await import("@tauri-apps/plugin-store")
-  return load(STORE_NAME, { autoSave: true, defaults: {} })
-}
+// ── Global registry (localStorage) ───────────────────────────────────────
 
 export async function loadRegistry(): Promise<ProjectRegistry> {
-  if (!IS_TAURI) {
-    try {
-      const raw = localStorage.getItem(`llmwiki:${REGISTRY_KEY}`)
-      return raw ? (JSON.parse(raw) as ProjectRegistry) : {}
-    } catch {
-      return {}
-    }
-  }
   try {
-    const store = await getStore()
-    const registry = await store.get<ProjectRegistry>(REGISTRY_KEY)
-    return registry ?? {}
+    const raw = localStorage.getItem(`llmwiki:${REGISTRY_KEY}`)
+    return raw ? (JSON.parse(raw) as ProjectRegistry) : {}
   } catch {
     return {}
   }
 }
 
 async function saveRegistry(registry: ProjectRegistry): Promise<void> {
-  if (!IS_TAURI) {
-    localStorage.setItem(`llmwiki:${REGISTRY_KEY}`, JSON.stringify(registry))
-    return
-  }
-  const store = await getStore()
-  await store.set(REGISTRY_KEY, registry)
+  localStorage.setItem(`llmwiki:${REGISTRY_KEY}`, JSON.stringify(registry))
 }
 
 /**

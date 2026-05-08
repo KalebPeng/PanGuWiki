@@ -3,27 +3,14 @@
  * pieces: auto-halve retry heuristics and the chunk→page aggregation
  * contract inside `searchByEmbedding`.
  *
- * The actual HTTP layer and Tauri LanceDB commands are mocked — we're
- * NOT testing Rust vectorstore here (that has its own 15 Rust tests)
- * nor the webview fetch (that's tauri-fetch.ts). The boundary we pin
- * down here is "given these chunk-level results, do we aggregate to
- * page-level scores the way the design says?".
+ * The actual HTTP layer and .NET LanceDB commands are mocked — we're
+ * NOT testing the vectorstore here. The boundary we pin down here is
+ * "given these chunk-level results, do we aggregate to page-level
+ * scores the way the design says?".
  *
- * When VITE_DOTNET_BACKEND=1, vector operations go through
- * @/api/dotnet-client (httpPost/httpGet/httpDelete) instead of Tauri
- * invoke. Both paths are mocked here so tests pass in either mode.
- * mockVectorPost / mockVectorGet / mockVectorDelete mirror the dotnet
- * path; mockInvoke covers the Tauri path. Tests assert on whichever
- * mock is active based on the USE_DOTNET flag.
+ * Vector operations go through @/api/dotnet-client (httpPost/httpGet/httpDelete).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
-
-// Module-level mock for the Tauri invoke boundary so we can script the
-// chunk-search response without touching real LanceDB.
-const mockInvoke = vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>()
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: unknown) => mockInvoke(cmd, args),
-}))
 
 // Stub getHttpFetch so fetchEmbedding calls hit our in-test responder.
 const mockHttpFetch = vi.fn<(url: string, opts?: RequestInit) => Promise<Response>>()
@@ -35,7 +22,7 @@ vi.mock("@/lib/tauri-fetch", () => ({
       (err.message === "Load failed" || err.message === "Failed to fetch")),
 }))
 
-// Mock the .NET HTTP client used when VITE_DOTNET_BACKEND=1.
+// Mock the .NET HTTP client.
 // httpPost handles vector_upsert_chunks and vector_search_chunks.
 // httpGet handles vector_count_chunks, vector_legacy_row_count.
 // httpDelete handles vector_delete_page and vector_drop_legacy.
@@ -54,60 +41,36 @@ vi.mock("@/commands/fs", () => ({
   listDirectory: vi.fn(),
 }))
 
-// Detect which backend is active so tests can assert on the right mock.
-const USE_DOTNET = import.meta.env.VITE_DOTNET_BACKEND === "1"
-
 /**
  * Mock the vector chunk-search backend (called by searchByEmbedding).
- * In Tauri mode this is invoke("vector_search_chunks", ...).
- * In .NET mode this is httpPost("/api/vector/chunks/search", ...) → resolves chunks.
+ * httpPost("/api/vector/chunks/search", ...) → resolves chunks.
  */
 function mockVectorSearch(chunks: unknown[]): void {
-  if (USE_DOTNET) {
-    mockVectorPost.mockResolvedValueOnce(chunks)
-  } else {
-    mockInvoke.mockResolvedValueOnce(chunks)
-  }
+  mockVectorPost.mockResolvedValueOnce(chunks)
 }
 
 /**
  * Mock a reject on the vector chunk-search backend.
  */
 function mockVectorSearchError(err: Error): void {
-  if (USE_DOTNET) {
-    mockVectorPost.mockRejectedValueOnce(err)
-  } else {
-    mockInvoke.mockRejectedValueOnce(err)
-  }
+  mockVectorPost.mockRejectedValueOnce(err)
 }
 
 /**
  * Default-resolve the upsert/write backend (returns undefined/void).
- * In Tauri: mockInvoke.mockResolvedValue(undefined)
- * In .NET:  mockVectorPost.mockResolvedValue(undefined)
  */
 function mockVectorWriteOk(): void {
-  if (USE_DOTNET) {
-    mockVectorPost.mockResolvedValue(undefined)
-  } else {
-    mockInvoke.mockResolvedValue(undefined)
-  }
+  mockVectorPost.mockResolvedValue(undefined)
 }
 
 /**
  * Return the upsert calls recorded since last reset.
- * In Tauri: filter mockInvoke calls for "vector_upsert_chunks".
- * In .NET:  filter mockVectorPost calls for "/api/vector/chunks/upsert".
+ * Filter mockVectorPost calls for "/api/vector/chunks/upsert".
  * Normalised to [{pageId, chunks}] shape.
  */
 function getUpsertCalls(): Array<{ pageId: string; chunks: unknown[] }> {
-  if (USE_DOTNET) {
-    return mockVectorPost.mock.calls
-      .filter((c) => (c[0] as string).includes("/chunks/upsert"))
-      .map((c) => c[1] as { pageId: string; chunks: unknown[] })
-  }
-  return mockInvoke.mock.calls
-    .filter((c) => c[0] === "vector_upsert_chunks")
+  return mockVectorPost.mock.calls
+    .filter((c) => (c[0] as string).includes("/chunks/upsert"))
     .map((c) => c[1] as { pageId: string; chunks: unknown[] })
 }
 
@@ -158,7 +121,6 @@ function genericErrorResponse(status: number, body: string): Response {
 }
 
 beforeEach(() => {
-  mockInvoke.mockReset()
   mockHttpFetch.mockReset()
   mockVectorPost.mockReset()
   mockVectorGet.mockReset()
@@ -249,26 +211,14 @@ describe("searchByEmbedding — aggregation", () => {
     mockVectorSearch([])
     await searchByEmbedding("/tmp/p", "q", cfg, 3)
     // topK=3 → max(9, 30) = 30
-    if (USE_DOTNET) {
-      const searchCall = mockVectorPost.mock.calls.find((c) => (c[0] as string).includes("/chunks/search"))!
-      expect((searchCall[1] as { topK: number }).topK).toBe(30)
-      mockVectorPost.mockReset()
-      mockVectorPost.mockResolvedValueOnce([])
-    } else {
-      const searchCall = mockInvoke.mock.calls.find((c) => c[0] === "vector_search_chunks")!
-      expect((searchCall[1] as { topK: number }).topK).toBe(30)
-      mockInvoke.mockReset()
-      mockInvoke.mockResolvedValueOnce([])
-    }
+    const searchCall = mockVectorPost.mock.calls.find((c) => (c[0] as string).includes("/chunks/search"))!
+    expect((searchCall[1] as { topK: number }).topK).toBe(30)
+    mockVectorPost.mockReset()
+    mockVectorPost.mockResolvedValueOnce([])
     await searchByEmbedding("/tmp/p", "q", cfg, 20)
     // topK=20 → max(60, 30) = 60
-    if (USE_DOTNET) {
-      const searchCall2 = mockVectorPost.mock.calls.find((c) => (c[0] as string).includes("/chunks/search"))!
-      expect((searchCall2[1] as { topK: number }).topK).toBe(60)
-    } else {
-      const searchCall2 = mockInvoke.mock.calls.find((c) => c[0] === "vector_search_chunks")!
-      expect((searchCall2[1] as { topK: number }).topK).toBe(60)
-    }
+    const searchCall2 = mockVectorPost.mock.calls.find((c) => (c[0] as string).includes("/chunks/search"))!
+    expect((searchCall2[1] as { topK: number }).topK).toBe(60)
   })
 
   it("returns [] when the LanceDB search command throws (doesn't leak the error)", async () => {
@@ -430,7 +380,6 @@ describe("fetchEmbedding (via searchByEmbedding) — auto-halve", () => {
           new Response(JSON.stringify({ error: phrase }), { status: 400, statusText: "Bad Request" }),
         )
         .mockResolvedValueOnce(okResponse([0.1]))
-      mockInvoke.mockReset()
       mockVectorPost.mockReset()
       mockVectorSearch([
         { chunk_id: "P#0", page_id: "P", chunk_index: 0, chunk_text: "", heading_path: "", score: 0.5 },
@@ -627,12 +576,10 @@ describe("embedPage", () => {
     const content = "a".repeat(2000)
 
     mockVectorPost.mockClear()
-    mockInvoke.mockClear()
     await embedPage("/tmp/p", "p", "P", content, { ...cfg })
     const defaultChunks = getUpsertCalls()[0].chunks.length
 
     mockVectorPost.mockClear()
-    mockInvoke.mockClear()
     await embedPage("/tmp/p", "p", "P", content, {
       ...cfg,
       maxChunkChars: 400,
@@ -654,12 +601,10 @@ describe("embedPage", () => {
     const content = `${"ab ".repeat(400)}\n\n${"cd ".repeat(400)}`
 
     mockVectorPost.mockClear()
-    mockInvoke.mockClear()
     await embedPage("/tmp/p", "p", "P", content, { ...cfg, overlapChunkChars: 0 })
     const zeroOverlap = getUpsertCalls()[0].chunks as Array<{ chunk_text: string }>
 
     mockVectorPost.mockClear()
-    mockInvoke.mockClear()
     await embedPage("/tmp/p", "p", "P", content, { ...cfg, overlapChunkChars: 200 })
     const bigOverlap = getUpsertCalls()[0].chunks as Array<{ chunk_text: string }>
 
@@ -811,99 +756,42 @@ describe("embedAllPages", () => {
 
 describe("legacyVectorRowCount / dropLegacyVectorTable / getEmbeddingCount / removePageEmbedding", () => {
   it("legacyVectorRowCount: returns the backend row count on success, 0 on error", async () => {
-    if (USE_DOTNET) {
-      mockVectorGet.mockResolvedValueOnce(42)
-    } else {
-      mockInvoke.mockResolvedValueOnce(42)
-    }
+    mockVectorGet.mockResolvedValueOnce(42)
     const n = await legacyVectorRowCount("/proj")
     expect(n).toBe(42)
-    if (USE_DOTNET) {
-      expect(mockVectorGet).toHaveBeenCalledWith(expect.stringContaining("/vector/legacy/count"))
-    } else {
-      expect(mockInvoke).toHaveBeenCalledWith("vector_legacy_row_count", {
-        projectPath: "/proj",
-      })
-    }
+    expect(mockVectorGet).toHaveBeenCalledWith(expect.stringContaining("/vector/legacy/count"))
 
-    if (USE_DOTNET) {
-      mockVectorGet.mockRejectedValueOnce(new Error("legacy table missing"))
-    } else {
-      mockInvoke.mockRejectedValueOnce(new Error("legacy table missing"))
-    }
+    mockVectorGet.mockRejectedValueOnce(new Error("legacy table missing"))
     const n2 = await legacyVectorRowCount("/proj")
     expect(n2).toBe(0)
   })
 
   it("dropLegacyVectorTable: calls backend with normalized path, propagates throws", async () => {
-    if (USE_DOTNET) {
-      mockVectorDelete.mockResolvedValueOnce(undefined)
-    } else {
-      mockInvoke.mockResolvedValueOnce(undefined)
-    }
+    mockVectorDelete.mockResolvedValueOnce(undefined)
     await dropLegacyVectorTable("/proj")
-    if (USE_DOTNET) {
-      expect(mockVectorDelete).toHaveBeenCalledWith(expect.stringContaining("/vector/legacy"))
-    } else {
-      expect(mockInvoke).toHaveBeenCalledWith("vector_drop_legacy", {
-        projectPath: "/proj",
-      })
-    }
+    expect(mockVectorDelete).toHaveBeenCalledWith(expect.stringContaining("/vector/legacy"))
 
     // Unlike the read helpers, drop is destructive enough that a
     // failure SHOULD propagate — callers can show the error in UI.
-    if (USE_DOTNET) {
-      mockVectorDelete.mockRejectedValueOnce(new Error("lock contention"))
-    } else {
-      mockInvoke.mockRejectedValueOnce(new Error("lock contention"))
-    }
+    mockVectorDelete.mockRejectedValueOnce(new Error("lock contention"))
     await expect(dropLegacyVectorTable("/proj")).rejects.toThrow("lock contention")
   })
 
   it("getEmbeddingCount: returns chunk count, swallows errors to 0", async () => {
-    if (USE_DOTNET) {
-      mockVectorGet.mockResolvedValueOnce(128)
-    } else {
-      mockInvoke.mockResolvedValueOnce(128)
-    }
+    mockVectorGet.mockResolvedValueOnce(128)
     expect(await getEmbeddingCount("/proj")).toBe(128)
-    if (USE_DOTNET) {
-      expect(mockVectorGet).toHaveBeenCalledWith(expect.stringContaining("/chunks/count"))
-    } else {
-      expect(mockInvoke).toHaveBeenCalledWith("vector_count_chunks", {
-        projectPath: "/proj",
-      })
-    }
+    expect(mockVectorGet).toHaveBeenCalledWith(expect.stringContaining("/chunks/count"))
 
-    if (USE_DOTNET) {
-      mockVectorGet.mockRejectedValueOnce(new Error("table missing"))
-    } else {
-      mockInvoke.mockRejectedValueOnce(new Error("table missing"))
-    }
+    mockVectorGet.mockRejectedValueOnce(new Error("table missing"))
     expect(await getEmbeddingCount("/proj")).toBe(0)
   })
 
   it("removePageEmbedding: calls backend delete, swallows errors silently", async () => {
-    if (USE_DOTNET) {
-      mockVectorDelete.mockResolvedValueOnce(undefined)
-    } else {
-      mockInvoke.mockResolvedValueOnce(undefined)
-    }
+    mockVectorDelete.mockResolvedValueOnce(undefined)
     await removePageEmbedding("/proj", "rope")
-    if (USE_DOTNET) {
-      expect(mockVectorDelete).toHaveBeenCalledWith(expect.stringContaining("rope"))
-    } else {
-      expect(mockInvoke).toHaveBeenCalledWith("vector_delete_page", {
-        projectPath: "/proj",
-        pageId: "rope",
-      })
-    }
+    expect(mockVectorDelete).toHaveBeenCalledWith(expect.stringContaining("rope"))
 
-    if (USE_DOTNET) {
-      mockVectorDelete.mockRejectedValueOnce(new Error("table missing"))
-    } else {
-      mockInvoke.mockRejectedValueOnce(new Error("table missing"))
-    }
+    mockVectorDelete.mockRejectedValueOnce(new Error("table missing"))
     // Must not throw — source-delete flow depends on silent failure.
     await expect(removePageEmbedding("/proj", "rope")).resolves.toBeUndefined()
   })

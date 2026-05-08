@@ -1,18 +1,13 @@
 /**
  * Claude Code CLI subprocess transport.
  *
- * Two implementations:
- *  - Tauri (default): uses Tauri events and invoke()
- *  - .NET (VITE_DOTNET_BACKEND=1): uses WebSocket at ws://localhost:5200/ws/claude
+ * Uses the .NET backend WebSocket at ws://localhost:5200/ws/claude.
  */
 
-import { invoke } from "@tauri-apps/api/core"
-import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type { LlmConfig } from "@/stores/wiki-store"
 import type { ChatMessage, RequestOverrides } from "./llm-providers"
 import type { StreamCallbacks } from "./llm-client"
 
-const USE_DOTNET = import.meta.env.VITE_DOTNET_BACKEND === '1'
 const DOTNET_WS_URL = (() => {
   const base = import.meta.env.VITE_DOTNET_URL ?? 'http://localhost:5200'
   return base.replace(/^http/, 'ws')
@@ -84,12 +79,9 @@ export async function streamClaudeCodeCli(
   messages: ChatMessage[],
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
-  overrides?: RequestOverrides,
+  _overrides?: RequestOverrides,
 ): Promise<void> {
-  if (USE_DOTNET) {
-    return streamClaudeCodeCliDotnet(config, messages, callbacks, signal)
-  }
-  return streamClaudeCodeCliTauri(config, messages, callbacks, signal, overrides)
+  return streamClaudeCodeCliDotnet(config, messages, callbacks, signal)
 }
 
 // ── .NET WebSocket implementation ─────────────────────────────────────────
@@ -175,118 +167,7 @@ async function streamClaudeCodeCliDotnet(
   }
 }
 
-// ── Tauri implementation (unchanged from original) ────────────────────────
-
-type SpawnPayload = Record<string, unknown> & {
-  streamId: string
-  model: string
-  messages: ChatMessage[]
-}
-
-async function streamClaudeCodeCliTauri(
-  config: LlmConfig,
-  messages: ChatMessage[],
-  callbacks: StreamCallbacks,
-  signal?: AbortSignal,
-  overrides?: RequestOverrides,
-): Promise<void> {
-  const { onToken, onDone, onError } = callbacks
-
-  if (import.meta.env?.DEV && overrides) {
-    for (const key of ["temperature", "top_p", "top_k", "max_tokens", "stop"] as const) {
-      if (overrides[key] !== undefined) {
-        // eslint-disable-next-line no-console
-        console.warn(`[claude-code] ignoring unsupported override "${key}": CLI has no equivalent flag`)
-      }
-    }
-  }
-
-  const streamId = crypto.randomUUID()
-  const parse = createClaudeCodeStreamParser()
-
-  let unlistenData: UnlistenFn | undefined
-  let unlistenDone: UnlistenFn | undefined
-  let finished = false
-
-  const UNPARSED_BUFFER_CAP = 4096
-  const unparsedLines: string[] = []
-  let unparsedSize = 0
-  function captureUnparsed(line: string) {
-    if (unparsedSize >= UNPARSED_BUFFER_CAP) return
-    const trimmed = line.trim()
-    if (trimmed.length === 0) return
-    unparsedLines.push(line)
-    unparsedSize += line.length + 1
-  }
-
-  const cleanup = () => {
-    unlistenData?.()
-    unlistenDone?.()
-  }
-
-  const finishWith = (cb: () => void) => {
-    if (finished) return
-    finished = true
-    cleanup()
-    cb()
-  }
-
-  const abortListener = () => {
-    void invoke("claude_cli_kill", { streamId }).catch(() => {})
-    finishWith(onDone)
-  }
-  signal?.addEventListener("abort", abortListener)
-
-  try {
-    unlistenData = await listen<string>(`claude-cli:${streamId}`, (event) => {
-      const token = parse(event.payload)
-      if (token !== null) {
-        onToken(token)
-      } else {
-        captureUnparsed(event.payload)
-      }
-    })
-
-    unlistenDone = await listen<{ code: number | null; stderr: string }>(
-      `claude-cli:${streamId}:done`,
-      (event) => {
-        const code = event.payload?.code
-        const stderr = event.payload?.stderr?.trim() ?? ""
-        if (code !== null && code !== undefined && code !== 0) {
-          finishWith(() =>
-            onError(
-              new Error(buildExitError(code, stderr, unparsedLines.join("\n"))),
-            ),
-          )
-        } else {
-          finishWith(onDone)
-        }
-      },
-    )
-
-    const payload: SpawnPayload = {
-      streamId,
-      model: config.model,
-      messages,
-    }
-    await invoke("claude_cli_spawn", payload)
-  } catch (err) {
-    finishWith(() => {
-      const message = err instanceof Error ? err.message : String(err)
-      if (/not found|No such file|executable file not found/i.test(message)) {
-        onError(new Error(
-          "Claude Code CLI not found. Install `claude` (https://www.anthropic.com/claude-code) or pick a different provider.",
-        ))
-      } else {
-        onError(err instanceof Error ? err : new Error(message))
-      }
-    })
-  } finally {
-    signal?.removeEventListener("abort", abortListener)
-  }
-}
-
-// ── Error formatting (unchanged) ──────────────────────────────────────────
+// ── Error formatting ──────────────────────────────────────────────────────
 
 export function buildExitError(
   code: number,

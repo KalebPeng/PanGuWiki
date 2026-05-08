@@ -12,7 +12,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { invoke } from "@tauri-apps/api/core"
+import { httpPost } from "@/api/dotnet-client"
 import i18n from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -240,12 +240,9 @@ export function SettingsView() {
     await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
     setProxyConfig(newProxy)
     await saveProxyConfig(newProxy)
-    // Apply the proxy env vars LIVE so the next outbound request
-    // picks them up — no app restart needed. tauri-plugin-http
-    // builds a fresh reqwest client per fetch and reqwest reads
-    // env vars at build time, so changing them here is enough.
+    // Apply the proxy config to the .NET backend LIVE.
     try {
-      await invoke<string>("set_proxy_env", { config: newProxy })
+      await httpPost('/api/proxy/set', newProxy)
     } catch (err) {
       console.warn("[proxy] live update failed; restart will still apply:", err)
     }
