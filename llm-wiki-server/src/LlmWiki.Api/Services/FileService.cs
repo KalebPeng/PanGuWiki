@@ -4,7 +4,7 @@ namespace LlmWiki.Api.Services;
 
 public class FileService(PdfExtractService pdfExtract, OfficeExtractService officeExtract)
 {
-    private static readonly string[] OfficeExts = ["docx", "pptx", "xlsx", "xls", "odt", "ods", "odp"];
+    private static readonly string[] OfficeExts = ["docx", "pptx", "xlsx", "odt", "ods", "odp"];
     private static readonly string[] ImageExts = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif", "avif", "heic", "heif", "svg"];
     private static readonly string[] MediaExts = ["mp4", "webm", "mov", "avi", "mkv", "flv", "mp3", "wav", "ogg", "flac", "aac", "m4a"];
     private static readonly string[] LegacyExts = ["doc", "xls", "ppt", "pages", "numbers", "key", "epub"];
@@ -122,7 +122,7 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
         {
             var entries = Directory.GetFileSystemEntries(dir)
                 .Where(e => !Path.GetFileName(e).StartsWith('.'))
-                .OrderBy(Directory.Exists)
+                .OrderByDescending(Directory.Exists)
                 .ThenBy(Path.GetFileName);
 
             return entries.Select(e =>
@@ -191,6 +191,7 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     private static bool CheckFrontmatterSources(string content, string fileName)
     {
+        content = content.ReplaceLineEndings("\n");
         if (!content.StartsWith("---\n")) return false;
         var fmEnd = content.IndexOf("\n---", 4);
         if (fmEnd < 0) return false;

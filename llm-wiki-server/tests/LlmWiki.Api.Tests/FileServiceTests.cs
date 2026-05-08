@@ -98,7 +98,7 @@ public class FileServiceTests : IDisposable
 
         var copied = await _sut.CopyDirectory(src, dst);
 
-        Assert.Equal(1, copied.Count);
+        Assert.Single(copied);
         Assert.False(File.Exists(Path.Combine(dst, ".DS_Store")));
     }
 
