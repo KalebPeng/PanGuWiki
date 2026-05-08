@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { httpGet, httpPost, httpDelete } from './dotnet-client'
+import { httpGet, httpPost } from './dotnet-client'
 
 describe('dotnet-client', () => {
   beforeEach(() => {

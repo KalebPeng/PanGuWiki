@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core"
 import type { FileNode, WikiProject } from "@/types/wiki"
 import { ensureProjectId, upsertProjectInfo } from "@/lib/project-identity"
+import { httpGet, httpPost } from "@/api/dotnet-client"
+
+const USE_DOTNET = import.meta.env.VITE_DOTNET_BACKEND === '1'
 
 /** Raw shape returned by the Rust commands — id is attached client-side. */
 interface RawProject {
@@ -70,19 +73,25 @@ export async function createProject(
   name: string,
   path: string,
 ): Promise<WikiProject> {
-  const raw = await invoke<RawProject>("create_project", { name, path })
+  const raw = USE_DOTNET
+    ? await httpPost<RawProject>('/api/project/create', { name, path })
+    : await invoke<RawProject>("create_project", { name, path })
   const id = await ensureProjectId(raw.path)
   await upsertProjectInfo(id, raw.path, raw.name)
   return { id, name: raw.name, path: raw.path }
 }
 
 export async function openProject(path: string): Promise<WikiProject> {
-  const raw = await invoke<RawProject>("open_project", { path })
+  const raw = USE_DOTNET
+    ? await httpPost<RawProject>('/api/project/open', { path })
+    : await invoke<RawProject>("open_project", { path })
   const id = await ensureProjectId(raw.path)
   await upsertProjectInfo(id, raw.path, raw.name)
   return { id, name: raw.name, path: raw.path }
 }
 
 export async function clipServerStatus(): Promise<string> {
-  return invoke<string>("clip_server_status")
+  return USE_DOTNET
+    ? httpGet<string>('/api/status/clip')
+    : invoke<string>("clip_server_status")
 }
