@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "bEbSevDsqNhu05qB5eFdCqUZpmB5O3w6R1F9qiB0eU0=",
+  "Source": "LlmWiki.Api",
+  "BasePath": "_content/LlmWiki.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
