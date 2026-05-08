@@ -27,6 +27,9 @@ import type { FileNode } from "@/types/wiki"
 import { normalizePath } from "@/lib/path-utils"
 import { getHttpFetch, isFetchNetworkError } from "@/lib/tauri-fetch"
 import { chunkMarkdown, type Chunk } from "@/lib/text-chunker"
+import { httpGet, httpPost, httpDelete } from "@/api/dotnet-client"
+
+const USE_DOTNET = import.meta.env.VITE_DOTNET_BACKEND === "1"
 
 // ── Error surfacing ──────────────────────────────────────────────────────
 
@@ -174,16 +177,26 @@ async function vectorUpsertChunks(
   pageId: string,
   chunks: ChunkUpsertInput[],
 ): Promise<void> {
-  await invoke("vector_upsert_chunks", {
-    projectPath: normalizePath(projectPath),
-    pageId,
-    chunks: chunks.map((c) => ({
-      chunk_index: c.chunkIndex,
-      chunk_text: c.chunkText,
-      heading_path: c.headingPath,
-      embedding: c.embedding.map((v) => Math.fround(v)),
-    })),
-  })
+  const normalizedPath = normalizePath(projectPath)
+  const mappedChunks = chunks.map((c) => ({
+    chunk_index: c.chunkIndex,
+    chunk_text: c.chunkText,
+    heading_path: c.headingPath,
+    embedding: c.embedding.map((v) => Math.fround(v)),
+  }))
+  if (USE_DOTNET) {
+    await httpPost("/api/vector/chunks/upsert", {
+      projectPath: normalizedPath,
+      pageId,
+      chunks: mappedChunks,
+    })
+  } else {
+    await invoke("vector_upsert_chunks", {
+      projectPath: normalizedPath,
+      pageId,
+      chunks: mappedChunks,
+    })
+  }
 }
 
 interface ChunkSearchResult {
@@ -200,30 +213,52 @@ async function vectorSearchChunks(
   queryEmbedding: number[],
   topK: number,
 ): Promise<ChunkSearchResult[]> {
+  const normalizedPath = normalizePath(projectPath)
+  const roundedEmbedding = queryEmbedding.map((v) => Math.fround(v))
+  if (USE_DOTNET) {
+    return await httpPost<ChunkSearchResult[]>("/api/vector/chunks/search", {
+      projectPath: normalizedPath,
+      queryEmbedding: roundedEmbedding,
+      topK,
+    })
+  }
   return await invoke("vector_search_chunks", {
-    projectPath: normalizePath(projectPath),
-    queryEmbedding: queryEmbedding.map((v) => Math.fround(v)),
+    projectPath: normalizedPath,
+    queryEmbedding: roundedEmbedding,
     topK,
   })
 }
 
 async function vectorDeletePage(projectPath: string, pageId: string): Promise<void> {
-  await invoke("vector_delete_page", {
-    projectPath: normalizePath(projectPath),
-    pageId,
-  })
+  const normalizedPath = normalizePath(projectPath)
+  if (USE_DOTNET) {
+    await httpDelete(`/api/vector/chunks/${encodeURIComponent(pageId)}?projectPath=${encodeURIComponent(normalizedPath)}`)
+  } else {
+    await invoke("vector_delete_page", {
+      projectPath: normalizedPath,
+      pageId,
+    })
+  }
 }
 
 async function vectorCountChunks(projectPath: string): Promise<number> {
+  const normalizedPath = normalizePath(projectPath)
+  if (USE_DOTNET) {
+    return await httpGet<number>(`/api/vector/chunks/count?projectPath=${encodeURIComponent(normalizedPath)}`)
+  }
   return await invoke("vector_count_chunks", {
-    projectPath: normalizePath(projectPath),
+    projectPath: normalizedPath,
   })
 }
 
 export async function legacyVectorRowCount(projectPath: string): Promise<number> {
   try {
+    const normalizedPath = normalizePath(projectPath)
+    if (USE_DOTNET) {
+      return await httpGet<number>(`/api/vector/legacy/count?projectPath=${encodeURIComponent(normalizedPath)}`)
+    }
     return await invoke("vector_legacy_row_count", {
-      projectPath: normalizePath(projectPath),
+      projectPath: normalizedPath,
     })
   } catch {
     return 0
@@ -231,9 +266,14 @@ export async function legacyVectorRowCount(projectPath: string): Promise<number>
 }
 
 export async function dropLegacyVectorTable(projectPath: string): Promise<void> {
-  await invoke("vector_drop_legacy", {
-    projectPath: normalizePath(projectPath),
-  })
+  const normalizedPath = normalizePath(projectPath)
+  if (USE_DOTNET) {
+    await httpDelete(`/api/vector/legacy?projectPath=${encodeURIComponent(normalizedPath)}`)
+  } else {
+    await invoke("vector_drop_legacy", {
+      projectPath: normalizedPath,
+    })
+  }
 }
 
 // ── Chunk enrichment ─────────────────────────────────────────────────────
