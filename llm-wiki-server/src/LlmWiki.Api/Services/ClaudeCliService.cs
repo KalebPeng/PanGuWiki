@@ -76,35 +76,43 @@ public class ClaudeCliService
         var proc = Process.Start(psi)!;
         _processes[streamId] = proc;
 
-        bool firstUser = true;
-        foreach (var msg in conversation)
+        try
         {
-            var content = msg.Content;
-            if (firstUser && msg.Role == "user" && systemPreamble.Length > 0)
+            bool firstUser = true;
+            foreach (var msg in conversation)
             {
-                content = $"{systemPreamble}\n\n{content}";
-                firstUser = false;
+                var content = msg.Content;
+                if (firstUser && msg.Role == "user" && systemPreamble.Length > 0)
+                {
+                    content = $"{systemPreamble}\n\n{content}";
+                    firstUser = false;
+                }
+
+                var evt = JsonSerializer.Serialize(new
+                {
+                    type = msg.Role,
+                    message = new { role = msg.Role, content = new[] { new { type = "text", text = content } } }
+                });
+                await proc.StandardInput.WriteLineAsync(evt);
             }
+            await proc.StandardInput.FlushAsync();
+            proc.StandardInput.Close();
 
-            var evt = JsonSerializer.Serialize(new
-            {
-                type = msg.Role,
-                message = new { role = msg.Role, content = new[] { new { type = "text", text = content } } }
-            });
-            await proc.StandardInput.WriteLineAsync(evt);
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            string? line;
+            while ((line = await proc.StandardOutput.ReadLineAsync()) != null)
+                await onLine(line);
+
+            await proc.WaitForExitAsync();
+            var stderr = (await stderrTask).Trim();
+            await onDone(proc.ExitCode, stderr);
         }
-        await proc.StandardInput.FlushAsync();
-        proc.StandardInput.Close();
-
-        var stderrTask = proc.StandardError.ReadToEndAsync();
-        string? line;
-        while ((line = await proc.StandardOutput.ReadLineAsync()) != null)
-            await onLine(line);
-
-        await proc.WaitForExitAsync();
-        var stderr = (await stderrTask).Trim();
-        _processes.TryRemove(streamId, out _);
-        await onDone(proc.ExitCode, stderr);
+        finally
+        {
+            _processes.TryRemove(streamId, out _);
+            try { proc.Kill(entireProcessTree: false); } catch { /* already exited */ }
+            proc.Dispose();
+        }
     }
 
     public void Kill(string streamId)
