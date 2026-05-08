@@ -7,7 +7,11 @@ public class ProjectServiceTests : IDisposable
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
     private readonly ProjectService _sut = new();
 
-    public void Dispose() => Directory.Delete(_tempDir, recursive: true);
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempDir))
+            Directory.Delete(_tempDir, recursive: true);
+    }
 
     [Fact]
     public void CreateProject_CreatesRequiredDirectories()

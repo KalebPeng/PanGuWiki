@@ -20,6 +20,10 @@ public class ProjectController(ProjectService projectService) : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"File system error: {ex.Message}" });
+        }
     }
 
     [HttpPost("open")]
@@ -33,6 +37,10 @@ public class ProjectController(ProjectService projectService) : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"File system error: {ex.Message}" });
         }
     }
 }

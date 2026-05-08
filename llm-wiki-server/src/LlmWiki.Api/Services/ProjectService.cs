@@ -6,6 +6,12 @@ public class ProjectService
 {
     public WikiProject CreateProject(string name, string basePath)
     {
+        // Validate name to prevent path traversal
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Project name cannot be empty.");
+        if (name.Contains('/') || name.Contains('\\') || name.Contains(".."))
+            throw new InvalidOperationException($"Invalid project name '{name}': must not contain path separators or '..'.");
+
         var root = Path.Combine(basePath, name);
         if (Directory.Exists(root))
             throw new InvalidOperationException($"Directory already exists: '{root}'");
