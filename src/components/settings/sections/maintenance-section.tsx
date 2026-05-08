@@ -373,7 +373,7 @@ function QueueOrphanList({
         >
           <code className="font-mono">{task.group.slugs.join(" + ")}</code>
           <span className="text-muted-foreground">
-            →{" "}
+            {"-> "}
             <code className="font-mono">{task.canonicalSlug}</code>
           </span>
           <span className="ml-auto inline-flex items-center gap-1">
@@ -389,14 +389,14 @@ function QueueOrphanList({
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 {t("settings.sections.maintenance.dedup.retry", {
-                  defaultValue: "Retry",
+                  defaultValue: "重试",
                 })}
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => onCancel(task.id)}>
               <Trash2 className="h-3.5 w-3.5" />
               {t("settings.sections.maintenance.dedup.delete", {
-                defaultValue: "Delete",
+                defaultValue: "删除",
               })}
             </Button>
           </span>
@@ -423,7 +423,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
       <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-400">
         <Loader2 className="h-3 w-3 animate-spin" />
         {t("settings.sections.maintenance.dedup.merging", {
-          defaultValue: "Merging…",
+          defaultValue: "合并中...",
         })}
       </span>
     )
@@ -433,7 +433,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
       return (
         <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
           {t("settings.sections.maintenance.dedup.queued", {
-            defaultValue: "Queued",
+            defaultValue: "排队中",
           })}
         </span>
       )
@@ -441,7 +441,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
     return (
       <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
         {t("settings.sections.maintenance.dedup.queuedAhead", {
-          defaultValue: "Queued ({{n}} ahead)",
+          defaultValue: "排队中（前方还有 {{n}} 个）",
           n: pendingPosition,
         })}
       </span>
@@ -452,7 +452,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
       <span className="inline-flex items-center gap-1 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-rose-700 dark:text-rose-400">
         <AlertTriangle className="h-3 w-3" />
         {t("settings.sections.maintenance.dedup.failed", {
-          defaultValue: "Failed ({{retries}}/3)",
+          defaultValue: "失败（{{retries}}/3）",
           retries: task.retryCount,
         })}
       </span>
@@ -510,19 +510,19 @@ function DuplicateGroupCard({
         </span>
         <span className="text-xs text-muted-foreground">
           {t("settings.sections.maintenance.dedup.candidates", {
-            defaultValue: "{{n}} candidates",
+            defaultValue: "{{n}} 个候选",
             n: group.slugs.length,
           })}
         </span>
         {merged && (
           <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            {t("settings.sections.maintenance.dedup.merged", { defaultValue: "Merged" })}
+            {t("settings.sections.maintenance.dedup.merged", { defaultValue: "已合并" })}
           </span>
         )}
         {skipped && (
           <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
-            {t("settings.sections.maintenance.dedup.skipped", { defaultValue: "Marked not duplicates" })}
+            {t("settings.sections.maintenance.dedup.skipped", { defaultValue: "已标记为非重复" })}
           </span>
         )}
         {task && !finished && (
@@ -541,7 +541,7 @@ function DuplicateGroupCard({
           <div className="space-y-1.5">
             <Label className="text-xs">
               {t("settings.sections.maintenance.dedup.canonicalLabel", {
-                defaultValue: "Keep this slug as canonical:",
+                defaultValue: "保留以下 slug 作为主条目：",
               })}
             </Label>
             {group.slugs.map((slug) => (
@@ -566,13 +566,13 @@ function DuplicateGroupCard({
               <>
                 <Button size="sm" onClick={onEnqueue}>
                   {t("settings.sections.maintenance.dedup.mergeButton", {
-                    defaultValue: "Merge into {{slug}}",
+                    defaultValue: "合并到 {{slug}}",
                     slug: canonicalSlug,
                   })}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onNotDuplicate}>
                   {t("settings.sections.maintenance.dedup.notDuplicates", {
-                    defaultValue: "Not duplicates",
+                    defaultValue: "不是重复项",
                   })}
                 </Button>
               </>
@@ -581,7 +581,7 @@ function DuplicateGroupCard({
               <Button size="sm" variant="ghost" onClick={onCancel}>
                 <Trash2 className="h-3.5 w-3.5" />
                 {t("settings.sections.maintenance.dedup.cancel", {
-                  defaultValue: "Cancel",
+                  defaultValue: "取消",
                 })}
               </Button>
             )}
@@ -590,13 +590,13 @@ function DuplicateGroupCard({
                 <Button size="sm" onClick={onRetry}>
                   <RotateCcw className="h-3.5 w-3.5" />
                   {t("settings.sections.maintenance.dedup.retry", {
-                    defaultValue: "Retry",
+                    defaultValue: "重试",
                   })}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onCancel}>
                   <Trash2 className="h-3.5 w-3.5" />
                   {t("settings.sections.maintenance.dedup.delete", {
-                    defaultValue: "Delete",
+                    defaultValue: "删除",
                   })}
                 </Button>
               </>

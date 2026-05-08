@@ -327,18 +327,18 @@ function App() {
       const validated = await openProject(proj.path)
       await handleProjectOpened(validated)
     } catch (err) {
-      window.alert(`Failed to open project: ${err}`)
+      window.alert(`打开项目失败：${err}`)
     }
   }
 
   async function handleOpenProject() {
-    const selected = window.prompt("Enter the wiki project folder path:")
+    const selected = window.prompt("请输入 Wiki 项目文件夹路径：")
     if (!selected || !selected.trim()) return
     try {
       const proj = await openProject(selected.trim())
       await handleProjectOpened(proj)
     } catch (err) {
-      window.alert(`Failed to open project: ${err}`)
+      window.alert(`打开项目失败：${err}`)
     }
   }
 
@@ -355,7 +355,7 @@ function App() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
-        Loading...
+        加载中...
       </div>
     )
   }

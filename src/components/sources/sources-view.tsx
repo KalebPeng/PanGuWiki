@@ -73,13 +73,13 @@ export function SourcesView() {
     // File picker dialog not available in browser mode.
     // Please place files directly in the project's raw/sources/ folder
     // and click Refresh to update the list.
-    window.alert("File import via dialog is not available in browser mode.\nPlease copy files directly into the project's raw/sources/ folder, then click Refresh.")
+    window.alert("浏览器模式下暂不支持通过对话框导入文件。\n请直接把文件复制到项目的 raw/sources/ 目录，然后点击“刷新”。")
   }
 
   async function handleImportFolder() {
     if (!project) return
     // Folder picker dialog not available in browser mode.
-    const selected = window.prompt("Enter the source folder path to import:")
+    const selected = window.prompt("输入要导入的资料文件夹路径：")
     if (!selected || !selected.trim()) return
 
     setImporting(true)
@@ -368,7 +368,7 @@ export function SourcesView() {
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
         <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={loadSources} title="Refresh">
+          <Button variant="ghost" size="icon" onClick={loadSources} title="刷新">
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button size="sm" onClick={handleImport} disabled={importing}>
@@ -377,7 +377,7 @@ export function SourcesView() {
           </Button>
           <Button size="sm" onClick={handleImportFolder} disabled={importing}>
             <Plus className="mr-1 h-4 w-4" />
-            {t("sources.importFolder", "Folder")}
+            {t("sources.importFolder", "文件夹")}
           </Button>
         </div>
       </div>
@@ -394,7 +394,7 @@ export function SourcesView() {
               </Button>
               <Button variant="outline" size="sm" onClick={handleImportFolder}>
                 <Plus className="mr-1 h-4 w-4" />
-                Folder
+                文件夹
               </Button>
             </div>
           </div>

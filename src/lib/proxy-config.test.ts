@@ -3,6 +3,7 @@ import {
   validateProxyUrl,
   buildNoProxyValue,
   isProxyActive,
+  toBackendProxyConfig,
   DEFAULT_BYPASS_LIST,
   type ProxyConfig,
 } from "./proxy-config"
@@ -100,5 +101,37 @@ describe("isProxyActive", () => {
     expect(
       isProxyActive({ enabled: true, url: "https://proxy.corp:443", bypassLocal: false }),
     ).toBe(true)
+  })
+})
+
+describe("toBackendProxyConfig", () => {
+  it("maps a valid proxy URL to the backend's HTTP/HTTPS fields", () => {
+    expect(
+      toBackendProxyConfig({
+        enabled: true,
+        url: "http://127.0.0.1:7890",
+        bypassLocal: true,
+      }),
+    ).toEqual({
+      enabled: true,
+      httpProxy: "http://127.0.0.1:7890",
+      httpsProxy: "http://127.0.0.1:7890",
+      noProxy: DEFAULT_BYPASS_LIST,
+    })
+  })
+
+  it("disables the backend proxy when the UI config is incomplete or invalid", () => {
+    expect(
+      toBackendProxyConfig({
+        enabled: true,
+        url: "not-a-url",
+        bypassLocal: false,
+      }),
+    ).toEqual({
+      enabled: false,
+      httpProxy: null,
+      httpsProxy: null,
+      noProxy: null,
+    })
   })
 })

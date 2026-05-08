@@ -14,6 +14,7 @@ import { normalizePath } from "@/lib/path-utils"
 import { OUTPUT_LANGUAGE_OPTIONS } from "@/lib/output-language-options"
 import { useWikiStore, type OutputLanguage } from "@/stores/wiki-store"
 import { saveOutputLanguage } from "@/lib/project-store"
+import { useTranslation } from "react-i18next"
 
 interface CreateProjectDialogProps {
   open: boolean
@@ -22,30 +23,26 @@ interface CreateProjectDialogProps {
 }
 
 export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: CreateProjectDialogProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState("")
   const [path, setPath] = useState("")
   const [selectedTemplate, setSelectedTemplate] = useState("general")
-  // Empty string = "user hasn't picked yet"; we validate this on
-  // submit so a fresh project never starts in implicit auto-detect
-  // mode. Once chosen, the value is one of OUTPUT_LANGUAGE_OPTIONS
-  // (`auto` is a valid explicit choice — the user is then opting
-  // INTO auto-detect rather than getting it by accident).
   const [language, setLanguage] = useState<string>("")
   const [error, setError] = useState("")
   const [creating, setCreating] = useState(false)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
 
   function handleBrowse() {
-    // File dialog not available in browser mode — please type the path manually.
+    // 浏览器模式下暂不支持文件夹选择，请手动输入路径。
   }
 
   async function handleCreate() {
     if (!name.trim() || !path.trim()) {
-      setError("Name and path are required")
+      setError("项目名称和路径不能为空")
       return
     }
     if (!language) {
-      setError("Please pick an AI output language")
+      setError("请选择 AI 输出语言")
       return
     }
     setCreating(true)
@@ -61,10 +58,6 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
         await createDirectory(`${pp}/${dir}`)
       }
 
-      // Persist the user's language choice. The store / disk
-      // mirror is what the rest of the app reads via
-      // `getOutputLanguage()` — without this write the choice
-      // wouldn't survive past the dialog closing.
       const lang = language as OutputLanguage
       setOutputLanguage(lang)
       await saveOutputLanguage(lang, project.id)
@@ -86,20 +79,25 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create New Wiki Project</DialogTitle>
+          <DialogTitle>{t("project.createTitle")}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4 py-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="name">Project Name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-research-wiki" />
+            <Label htmlFor="name">{t("project.name")}</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("project.namePlaceholder")}
+            />
           </div>
           <div className="flex flex-col gap-2">
-            <Label>Template</Label>
+            <Label>{t("project.template")}</Label>
             <TemplatePicker selected={selectedTemplate} onSelect={setSelectedTemplate} />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="language">
-              AI Output Language <span className="text-destructive">*</span>
+              AI 输出语言 <span className="text-destructive">*</span>
             </Label>
             <select
               id="language"
@@ -108,18 +106,8 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
               className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="" disabled>
-                Pick a language…
+                请选择语言…
               </option>
-              {/*
-                * "auto" is intentionally filtered out at project
-                * creation time. Auto-detect is a fine post-hoc
-                * setting (Settings → Output) for users who later
-                * decide they want it, but at create time we force
-                * an explicit commitment so the project never starts
-                * in the implicit-detect mode that was the source
-                * of "wiki content showed up in a language I didn't
-                * expect" surprises.
-                */}
               {OUTPUT_LANGUAGE_OPTIONS.filter((l) => l.value !== "auto").map((l) => (
                 <option key={l.value} value={l.value}>
                   {l.label}
@@ -127,15 +115,20 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              All AI-generated content (wiki pages, chat replies, research
-              output) will use this language. You can change it later in
-              Settings → Output.
+              所有 AI 生成内容（Wiki 页面、聊天回复、研究结果）都会使用这个语言。
+              之后也可以在“设置 → 输出偏好”中修改。
             </p>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="path">Parent Directory</Label>
+            <Label htmlFor="path">{t("project.parentDir")}</Label>
             <div className="flex gap-2">
-              <Input id="path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/Users/you/projects" className="flex-1" />
+              <Input
+                id="path"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="例如：D:/Projects"
+                className="flex-1"
+              />
               <Button variant="outline" size="icon" onClick={handleBrowse} type="button">
                 <FolderOpen className="h-4 w-4" />
               </Button>
@@ -144,8 +137,8 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={creating}>{creating ? "Creating..." : "Create"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("project.cancel")}</Button>
+          <Button onClick={handleCreate} disabled={creating}>{creating ? t("project.creating") : t("project.create")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

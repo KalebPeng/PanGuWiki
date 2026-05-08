@@ -20,10 +20,10 @@ import { readFile, writeFile, listDirectory } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 
 const typeConfig: Record<string, { icon: typeof AlertTriangle; label: string }> = {
-  orphan: { icon: Unlink, label: "Orphan Page" },
-  "broken-link": { icon: Link2Off, label: "Broken Link" },
-  "no-outlinks": { icon: ArrowUpRight, label: "No Outbound Links" },
-  semantic: { icon: BrainCircuit, label: "Semantic Issue" },
+  orphan: { icon: Unlink, label: "孤立页面" },
+  "broken-link": { icon: Link2Off, label: "失效链接" },
+  "no-outlinks": { icon: ArrowUpRight, label: "无出链" },
+  semantic: { icon: BrainCircuit, label: "语义问题" },
 }
 
 export function LintView() {
@@ -83,7 +83,7 @@ export function LintView() {
       }
     }
     setSelectedFile(candidates[0])
-    setFileContent(`Unable to load: ${page}`)
+    setFileContent(`无法加载：${page}`)
   }
 
   async function handleFix(result: LintResult, index: number) {
@@ -98,7 +98,7 @@ export function LintView() {
           // Add a link to this page from index.md
           const indexPath = `${pp}/wiki/index.md`
           let indexContent = ""
-          try { indexContent = await readFile(indexPath) } catch { indexContent = "# Wiki Index\n" }
+          try { indexContent = await readFile(indexPath) } catch { indexContent = "# Wiki 索引\n" }
 
           const pageName = result.page.replace(".md", "").replace(/^.*\//, "")
           const entry = `- [[${pageName}]]`
@@ -116,13 +116,13 @@ export function LintView() {
           const pagePath = `${pp}/wiki/${result.page}`
           useReviewStore.getState().addItem({
             type: "confirm",
-            title: `Fix broken link in ${result.page}`,
+            title: `修复 ${result.page} 中的失效链接`,
             description: result.detail,
             affectedPages: [result.page],
             options: [
-              { label: "Open & Edit", action: `open:${result.page}` },
-              { label: "Delete Page", action: `delete:${pagePath}` },
-              { label: "Skip", action: "Skip" },
+              { label: "打开并编辑", action: `open:${result.page}` },
+              { label: "删除页面", action: `delete:${pagePath}` },
+              { label: "跳过", action: "Skip" },
             ],
           })
           setResults((prev) => prev.filter((_, i) => i !== index))
@@ -133,12 +133,12 @@ export function LintView() {
           // Send to Review — user should add links manually
           useReviewStore.getState().addItem({
             type: "suggestion",
-            title: `Add cross-references to ${result.page}`,
-            description: "This page has no outbound [[wikilinks]]. Consider adding cross-references to related entities and concepts.",
+            title: `为 ${result.page} 添加交叉引用`,
+            description: "这个页面没有任何指向外部的 [[wikilink]]。可以考虑补充到相关实体或概念的交叉引用。",
             affectedPages: [result.page],
             options: [
-              { label: "Open & Edit", action: `open:${result.page}` },
-              { label: "Skip", action: "Skip" },
+              { label: "打开并编辑", action: `open:${result.page}` },
+              { label: "跳过", action: "Skip" },
             ],
           })
           setResults((prev) => prev.filter((_, i) => i !== index))
@@ -153,8 +153,8 @@ export function LintView() {
             description: result.detail,
             affectedPages: result.affectedPages ?? [result.page],
             options: [
-              { label: "Open & Edit", action: `open:${result.page}` },
-              { label: "Skip", action: "Skip" },
+              { label: "打开并编辑", action: `open:${result.page}` },
+              { label: "跳过", action: "Skip" },
             ],
           })
           setResults((prev) => prev.filter((_, i) => i !== index))
@@ -177,7 +177,7 @@ export function LintView() {
     if (!project) return
     const pp = normalizePath(project.path)
     const pagePath = `${pp}/wiki/${result.page}`
-    const confirmed = window.confirm(`Delete orphan page "${result.page}"?`)
+    const confirmed = window.confirm(`删除孤立页面“${result.page}”？`)
     if (!confirmed) return
 
     try {
@@ -207,10 +207,10 @@ export function LintView() {
     <div className="flex h-full flex-col">
       <div className="shrink-0 flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">Wiki Lint</h2>
+          <h2 className="text-sm font-semibold">Wiki 检查</h2>
           {hasRun && results.length > 0 && (
             <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-              {results.length} issue{results.length !== 1 ? "s" : ""}
+              {results.length} 个问题
             </span>
           )}
         </div>
@@ -222,7 +222,7 @@ export function LintView() {
               checked={runSemantic}
               onChange={(e) => setRunSemantic(e.target.checked)}
             />
-            Semantic (LLM)
+            语义检查（LLM）
           </label>
           <Button
             size="sm"
@@ -230,7 +230,7 @@ export function LintView() {
             disabled={running || !project}
           >
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${running ? "animate-spin" : ""}`} />
-            {running ? "Running..." : "Run Lint"}
+            {running ? "检查中..." : "开始检查"}
           </Button>
         </div>
       </div>
@@ -239,19 +239,19 @@ export function LintView() {
         {!hasRun ? (
           <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-muted-foreground/30" />
-            <p>Run lint to check wiki health</p>
-            <p className="text-xs">Checks for orphan pages, broken links, and more</p>
+            <p>运行检查以确认 Wiki 健康状态</p>
+            <p className="text-xs">会检查孤立页面、失效链接等问题</p>
           </div>
         ) : results.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-emerald-500/60" />
-            <p className="text-emerald-600 dark:text-emerald-400 font-medium">All clear!</p>
-            <p className="text-xs">No issues found.</p>
+            <p className="text-emerald-600 dark:text-emerald-400 font-medium">一切正常</p>
+            <p className="text-xs">未发现问题。</p>
           </div>
         ) : (
           <div className="flex flex-col gap-2 p-3">
             {warnings.length > 0 && (
-              <SectionHeader icon={AlertTriangle} label="Warnings" count={warnings.length} color="text-amber-500" />
+              <SectionHeader icon={AlertTriangle} label="警告" count={warnings.length} color="text-amber-500" />
             )}
             {warnings.map((result, i) => (
               <LintCard
@@ -265,7 +265,7 @@ export function LintView() {
               />
             ))}
             {infos.length > 0 && (
-              <SectionHeader icon={Info} label="Info" count={infos.length} color="text-blue-500" />
+              <SectionHeader icon={Info} label="信息" count={infos.length} color="text-blue-500" />
             )}
             {infos.map((result, i) => {
               const realIndex = warnings.length + i

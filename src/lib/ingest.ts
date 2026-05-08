@@ -249,6 +249,21 @@ export function languageRule(sourceContent: string = ""): string {
   return buildLanguageDirective(sourceContent)
 }
 
+export function getProjectMetaPaths(projectPath: string): {
+  schema: string
+  purpose: string
+  index: string
+  overview: string
+} {
+  const pp = normalizePath(projectPath)
+  return {
+    schema: `${pp}/schema.md`,
+    purpose: `${pp}/purpose.md`,
+    index: `${pp}/wiki/index.md`,
+    overview: `${pp}/wiki/overview.md`,
+  }
+}
+
 /**
  * Auto-ingest: reads source → LLM analyzes → LLM writes wiki pages, all in one go.
  * Used when importing new files.
@@ -293,12 +308,14 @@ async function autoIngestImpl(
     filesWritten: [],
   })
 
+  const paths = getProjectMetaPaths(pp)
+
   const [sourceContent, schema, purpose, index, overview] = await Promise.all([
     tryReadFile(sp),
-    tryReadFile(`${pp}/schema.md`),
-    tryReadFile(`${pp}/purpose.md`),
-    tryReadFile(`${pp}/wiki/index.md`),
-    tryReadFile(`${pp}/wiki/overview.md`),
+    tryReadFile(paths.schema),
+    tryReadFile(paths.purpose),
+    tryReadFile(paths.index),
+    tryReadFile(paths.overview),
   ])
 
   // ── Cache check: skip re-ingest if source content hasn't changed ──
@@ -1398,11 +1415,13 @@ export async function startIngest(
     )
   })
 
+  const paths = getProjectMetaPaths(pp)
+
   const [sourceContent, schema, purpose, index] = await Promise.all([
     tryReadFile(sp),
-    tryReadFile(`${pp}/wiki/schema.md`),
-    tryReadFile(`${pp}/wiki/purpose.md`),
-    tryReadFile(`${pp}/wiki/index.md`),
+    tryReadFile(paths.schema),
+    tryReadFile(paths.purpose),
+    tryReadFile(paths.index),
   ])
 
   const fileName = getFileName(sp)
@@ -1466,10 +1485,11 @@ export async function executeIngestWrites(
 ): Promise<string[]> {
   const pp = normalizePath(projectPath)
   const store = getStore()
+  const paths = getProjectMetaPaths(pp)
 
   const [schema, index] = await Promise.all([
-    tryReadFile(`${pp}/wiki/schema.md`),
-    tryReadFile(`${pp}/wiki/index.md`),
+    tryReadFile(paths.schema),
+    tryReadFile(paths.index),
   ])
 
   const conversationHistory = store.messages

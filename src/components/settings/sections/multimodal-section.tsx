@@ -9,7 +9,7 @@ interface Props {
 }
 
 const PROVIDER_OPTIONS: Array<{ value: SettingsDraft["multimodalProvider"]; label: string }> = [
-  { value: "custom", label: "Custom (OpenAI-compat)" },
+  { value: "custom", label: "自定义（OpenAI 兼容）" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google (Gemini)" },
@@ -22,11 +22,11 @@ export function MultimodalSection({ draft, setDraft }: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold">{t("settings.sections.multimodal.title", "Image captioning")}</h2>
+        <h2 className="text-xl font-semibold">{t("settings.sections.multimodal.title", "图片描述")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t(
             "settings.sections.multimodal.description",
-            "Generate factual captions for images extracted from PDFs / DOCX / PPTX during ingest. Captions are inserted as alt text inside the source markdown — they're what semantic search matches when you search for image content. Cached by image hash so duplicate logos / charts only call the LLM once.",
+            "在导入 PDF / DOCX / PPTX 时，为提取出的图片生成事实性描述。描述会写入源 markdown 的 alt 文本中，按图片内容搜索时就靠它命中。按图片哈希缓存，重复出现的 logo 或图表只会调用一次模型。",
           )}
         </p>
       </div>
@@ -51,12 +51,12 @@ export function MultimodalSection({ draft, setDraft }: Props) {
       >
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">
-            {t("settings.sections.multimodal.enableLabel", "Enable captioning at ingest")}
+            {t("settings.sections.multimodal.enableLabel", "导入时生成图片描述")}
           </div>
           <div className="text-xs text-muted-foreground">
             {t(
               "settings.sections.multimodal.enableHint",
-              "Off: images still get extracted, just no captions. Search won't find them by visual content. On: each new image triggers one vision-LLM call (cached by hash).",
+              "关闭：图片仍会被提取，但不会生成描述，搜索也无法按视觉内容命中。开启：每张新图片会触发一次视觉模型调用（按哈希缓存）。",
             )}
           </div>
         </div>
@@ -65,7 +65,7 @@ export function MultimodalSection({ draft, setDraft }: Props) {
           onClick={() => setDraft("multimodalEnabled", !draft.multimodalEnabled)}
           role="switch"
           aria-checked={draft.multimodalEnabled}
-          aria-label={t("settings.sections.multimodal.enableLabel", "Enable captioning at ingest")}
+          aria-label={t("settings.sections.multimodal.enableLabel", "导入时生成图片描述")}
           className="ml-3 flex shrink-0 items-center gap-2"
         >
           <span
@@ -74,8 +74,8 @@ export function MultimodalSection({ draft, setDraft }: Props) {
             }`}
           >
             {draft.multimodalEnabled
-              ? t("settings.sections.multimodal.stateOn", "ON")
-              : t("settings.sections.multimodal.stateOff", "OFF")}
+              ? t("settings.sections.multimodal.stateOn", "已开启")
+              : t("settings.sections.multimodal.stateOff", "已关闭")}
           </span>
           <span
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
@@ -110,12 +110,12 @@ export function MultimodalSection({ draft, setDraft }: Props) {
           <div className="flex items-center justify-between gap-3 rounded-md border p-3">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">
-                {t("settings.sections.multimodal.useMainLabel", "Use main LLM for captions")}
+                {t("settings.sections.multimodal.useMainLabel", "使用主 LLM 生成描述")}
               </div>
               <div className="text-xs text-muted-foreground">
                 {t(
                   "settings.sections.multimodal.useMainHint",
-                  "Reuse the model picked under Settings → LLM provider. Only enable this if that model accepts image input — text-only models will return a 400.",
+                  "复用“设置 -> LLM 提供商”里选中的模型。只有该模型支持图像输入时才建议开启，纯文本模型会返回 400。",
                 )}
               </div>
             </div>
@@ -126,7 +126,7 @@ export function MultimodalSection({ draft, setDraft }: Props) {
               aria-checked={draft.multimodalUseMainLlm}
               aria-label={t(
                 "settings.sections.multimodal.useMainLabel",
-                "Use main LLM for captions",
+                "使用主 LLM 生成描述",
               )}
               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                 draft.multimodalUseMainLlm ? "bg-primary" : "bg-muted"
@@ -143,11 +143,11 @@ export function MultimodalSection({ draft, setDraft }: Props) {
           {!draft.multimodalUseMainLlm && (
             <div className="space-y-4 rounded-md border p-3">
               <div className="text-sm font-medium">
-                {t("settings.sections.multimodal.dedicatedHeading", "Dedicated vision endpoint")}
+                {t("settings.sections.multimodal.dedicatedHeading", "独立视觉端点")}
               </div>
 
               <div className="space-y-2">
-                <Label>{t("settings.sections.multimodal.provider", "Provider")}</Label>
+                <Label>{t("settings.sections.multimodal.provider", "提供商")}</Label>
                 <select
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   value={draft.multimodalProvider}
@@ -165,7 +165,7 @@ export function MultimodalSection({ draft, setDraft }: Props) {
 
               {draft.multimodalProvider === "ollama" && (
                 <div className="space-y-2">
-                  <Label>{t("settings.sections.multimodal.ollamaUrl", "Ollama URL")}</Label>
+                  <Label>{t("settings.sections.multimodal.ollamaUrl", "Ollama 地址")}</Label>
                   <Input
                     value={draft.multimodalOllamaUrl}
                     onChange={(e) => setDraft("multimodalOllamaUrl", e.target.value)}
@@ -176,7 +176,7 @@ export function MultimodalSection({ draft, setDraft }: Props) {
 
               {draft.multimodalProvider === "custom" && (
                 <div className="space-y-2">
-                  <Label>{t("settings.sections.multimodal.customEndpoint", "Endpoint URL")}</Label>
+                  <Label>{t("settings.sections.multimodal.customEndpoint", "端点地址")}</Label>
                   <Input
                     value={draft.multimodalCustomEndpoint}
                     onChange={(e) => setDraft("multimodalCustomEndpoint", e.target.value)}
@@ -185,27 +185,27 @@ export function MultimodalSection({ draft, setDraft }: Props) {
                   <p className="text-xs text-muted-foreground">
                     {t(
                       "settings.sections.multimodal.customEndpointHint",
-                      "OpenAI-compatible /v1 base. LM Studio, llama.cpp server, vLLM, LocalAI all work.",
+                      "OpenAI 兼容的 /v1 根地址。LM Studio、llama.cpp server、vLLM、LocalAI 都可以使用。",
                     )}
                   </p>
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label>{t("settings.sections.multimodal.apiKey", "API key")}</Label>
+                <Label>{t("settings.sections.multimodal.apiKey", "API Key")}</Label>
                 <Input
                   type="password"
                   value={draft.multimodalApiKey}
                   onChange={(e) => setDraft("multimodalApiKey", e.target.value)}
                   placeholder={t(
                     "settings.sections.multimodal.apiKeyPlaceholder",
-                    "Leave blank for local / no-auth endpoints",
+                    "本地或无需鉴权的端点可留空",
                   )}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>{t("settings.sections.multimodal.model", "Model")}</Label>
+                <Label>{t("settings.sections.multimodal.model", "模型")}</Label>
                 <Input
                   value={draft.multimodalModel}
                   onChange={(e) => setDraft("multimodalModel", e.target.value)}
@@ -214,7 +214,7 @@ export function MultimodalSection({ draft, setDraft }: Props) {
                 <p className="text-xs text-muted-foreground">
                   {t(
                     "settings.sections.multimodal.modelHint",
-                    "Must be a vision-capable model. Text-only models will fail with a 400 / image-not-supported error at first ingest.",
+                    "必须是支持视觉输入的模型。纯文本模型会在首次导入时返回 400 / image-not-supported 错误。",
                   )}
                 </p>
               </div>

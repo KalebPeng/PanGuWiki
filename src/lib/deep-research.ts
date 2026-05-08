@@ -6,6 +6,21 @@ import { useWikiStore, type LlmConfig, type SearchApiConfig } from "@/stores/wik
 import { useResearchStore } from "@/stores/research-store"
 import { normalizePath } from "@/lib/path-utils"
 import { buildLanguageDirective } from "@/lib/output-language"
+import { makeQueryFileName } from "@/lib/wiki-filename"
+
+export function buildResearchOutputPath(
+  projectPath: string,
+  topic: string,
+  now: Date = new Date(),
+): { slug: string; fileName: string; filePath: string } {
+  const { slug, fileName: baseFileName } = makeQueryFileName(topic, now)
+  const fileName = `research-${baseFileName}`
+  return {
+    slug,
+    fileName,
+    filePath: `${normalizePath(projectPath)}/wiki/queries/${fileName}`,
+  }
+}
 
 /**
  * Queue a deep research task. Automatically starts processing if under concurrency limit.
@@ -166,9 +181,7 @@ async function executeResearch(
     store.updateTask(taskId, { status: "saving", synthesis: accumulated })
 
     const date = new Date().toISOString().slice(0, 10)
-    const slug = topic.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 50)
-    const fileName = `research-${slug}-${date}.md`
-    const filePath = `${pp}/wiki/queries/${fileName}`
+    const { filePath, fileName } = buildResearchOutputPath(pp, topic)
 
     const references = webResults
       .map((r, i) => `${i + 1}. [${r.title}](${r.url}) — ${r.source}`)

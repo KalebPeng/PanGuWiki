@@ -33,6 +33,13 @@ export interface ProxyConfig {
   bypassLocal: boolean
 }
 
+export interface BackendProxyConfig {
+  enabled: boolean
+  httpProxy: string | null
+  httpsProxy: string | null
+  noProxy: string | null
+}
+
 export const DEFAULT_PROXY_CONFIG: ProxyConfig = {
   enabled: false,
   url: "",
@@ -101,4 +108,27 @@ export function isProxyActive(cfg: ProxyConfig): boolean {
   if (!cfg.enabled) return false
   if (cfg.url.trim() === "") return false
   return validateProxyUrl(cfg.url).ok
+}
+
+/**
+ * Translate the UI's single-URL proxy model into the .NET backend's
+ * explicit HTTP_PROXY / HTTPS_PROXY / NO_PROXY payload.
+ */
+export function toBackendProxyConfig(cfg: ProxyConfig): BackendProxyConfig {
+  if (!isProxyActive(cfg)) {
+    return {
+      enabled: false,
+      httpProxy: null,
+      httpsProxy: null,
+      noProxy: null,
+    }
+  }
+
+  const url = cfg.url.trim()
+  return {
+    enabled: true,
+    httpProxy: url,
+    httpsProxy: url,
+    noProxy: buildNoProxyValue(cfg.bypassLocal),
+  }
 }

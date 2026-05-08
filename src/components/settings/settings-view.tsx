@@ -17,6 +17,7 @@ import i18n from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useChatStore } from "@/stores/chat-store"
+import { toBackendProxyConfig } from "@/lib/proxy-config"
 import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
 import { saveLanguage } from "@/lib/project-store"
 import type { SettingsDraft, DraftSetter } from "./settings-types"
@@ -242,7 +243,7 @@ export function SettingsView() {
     await saveProxyConfig(newProxy)
     // Apply the proxy config to the .NET backend LIVE.
     try {
-      await httpPost('/api/proxy/set', newProxy)
+      await httpPost('/api/proxy/set', toBackendProxyConfig(newProxy))
     } catch (err) {
       console.warn("[proxy] live update failed; restart will still apply:", err)
     }

@@ -11,6 +11,7 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     public async Task<string> ReadFile(string path)
     {
+        EnsurePathWithinWikiProject(path);
         var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
 
         if (TryReadCache(path, out var cached)) return cached!;
@@ -35,16 +36,18 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     public async Task WriteFile(string path, string contents)
     {
+        EnsurePathWithinWikiProject(path, allowNonExistent: true);
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         await File.WriteAllTextAsync(path, contents);
     }
 
     public Task<bool> FileExists(string path) =>
-        Task.FromResult(File.Exists(path) || Directory.Exists(path));
+        Task.FromResult(IsPathWithinWikiProject(path, allowNonExistent: true) && (File.Exists(path) || Directory.Exists(path)));
 
     public async Task<string> PreprocessFile(string path)
     {
+        EnsurePathWithinWikiProject(path);
         var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
         string text;
         if (ext == "pdf") text = await pdfExtract.ExtractText(path);
@@ -56,16 +59,18 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
     }
 
     public Task<List<FileNode>> ListDirectory(string path, int maxDepth = 30) =>
-        Task.FromResult(BuildTree(path, 0, maxDepth));
+        Task.FromResult(BuildTree(EnsurePathWithinWikiProject(path), 0, maxDepth));
 
     public Task CreateDirectory(string path)
     {
+        EnsurePathWithinWikiProject(path, allowNonExistent: true);
         Directory.CreateDirectory(path);
         return Task.CompletedTask;
     }
 
     public Task DeleteFile(string path)
     {
+        EnsurePathWithinWikiProject(path, allowNonExistent: true);
         if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
         else if (File.Exists(path)) File.Delete(path);
         return Task.CompletedTask;
@@ -73,6 +78,8 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     public Task CopyFile(string source, string destination)
     {
+        EnsureExistingFileSystemEntry(source);
+        EnsurePathWithinWikiProject(destination, allowNonExistent: true);
         var dir = Path.GetDirectoryName(destination);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         File.Copy(source, destination, overwrite: true);
@@ -81,6 +88,8 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     public Task<List<string>> CopyDirectory(string source, string destination)
     {
+        EnsureExistingDirectory(source);
+        EnsurePathWithinWikiProject(destination, allowNonExistent: true);
         var copied = new List<string>();
         CopyRecursive(source, destination, copied);
         return Task.FromResult(copied);
@@ -88,6 +97,7 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     public async Task<(string Base64, string MimeType)> ReadFileAsBase64(string path)
     {
+        EnsurePathWithinWikiProject(path);
         var bytes = await File.ReadAllBytesAsync(path);
         var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
         var mime = ext switch
@@ -106,6 +116,7 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
 
     public Task<List<string>> FindRelatedWikiPages(string projectPath, string sourceName)
     {
+        EnsurePathWithinWikiProject(projectPath);
         var wikiDir = Path.Combine(projectPath, "wiki");
         if (!Directory.Exists(wikiDir)) return Task.FromResult(new List<string>());
         var results = new List<string>();
@@ -234,5 +245,77 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
         var cp = CachePath(original);
         Directory.CreateDirectory(Path.GetDirectoryName(cp)!);
         File.WriteAllText(cp, text);
+    }
+
+    private static string EnsurePathWithinWikiProject(string path, bool allowNonExistent = false)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var probe = fullPath;
+
+        if (allowNonExistent && !File.Exists(fullPath) && !Directory.Exists(fullPath))
+        {
+          var parent = Path.GetDirectoryName(fullPath);
+          while (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent) && !File.Exists(parent))
+              parent = Path.GetDirectoryName(parent);
+          probe = parent ?? fullPath;
+        }
+
+        var projectRoot = FindWikiProjectRoot(probe);
+        if (projectRoot is null)
+            throw new InvalidOperationException($"Path is outside a wiki project: '{path}'");
+
+        var rootWithSep = projectRoot.EndsWith(Path.DirectorySeparatorChar) || projectRoot.EndsWith(Path.AltDirectorySeparatorChar)
+            ? projectRoot
+            : projectRoot + Path.DirectorySeparatorChar;
+
+        if (!fullPath.Equals(projectRoot, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Path is outside the resolved wiki project root: '{path}'");
+
+        return fullPath;
+    }
+
+    private static bool IsPathWithinWikiProject(string path, bool allowNonExistent = false)
+    {
+        try
+        {
+            EnsurePathWithinWikiProject(path, allowNonExistent);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? FindWikiProjectRoot(string path)
+    {
+        var current = Directory.Exists(path)
+            ? new DirectoryInfo(path)
+            : File.Exists(path)
+                ? new FileInfo(path).Directory
+                : new DirectoryInfo(Path.GetDirectoryName(path) ?? path);
+
+        while (current is not null)
+        {
+            var schema = Path.Combine(current.FullName, "schema.md");
+            var wiki = Path.Combine(current.FullName, "wiki");
+            if (File.Exists(schema) && Directory.Exists(wiki))
+                return current.FullName;
+            current = current.Parent;
+        }
+        return null;
+    }
+
+    private static void EnsureExistingFileSystemEntry(string path)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+            throw new InvalidOperationException($"Path does not exist: '{path}'");
+    }
+
+    private static void EnsureExistingDirectory(string path)
+    {
+        if (!Directory.Exists(path))
+            throw new InvalidOperationException($"Directory does not exist: '{path}'");
     }
 }

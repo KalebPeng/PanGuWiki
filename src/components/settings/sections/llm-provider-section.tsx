@@ -184,7 +184,7 @@ function PresetRow({
               : "border-muted-foreground/30 bg-muted-foreground/20 hover:bg-muted-foreground/30"
           }`}
           title={isActive ? t("settings.sections.llm.toggleOff") : t("settings.sections.llm.toggleOn")}
-          aria-label={isActive ? "Deactivate" : "Activate"}
+          aria-label={isActive ? "停用" : "启用"}
         >
           <span
             className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm ring-1 ring-black/10 transition-transform ${
@@ -199,7 +199,7 @@ function PresetRow({
         <div className="space-y-4 border-t bg-background/50 px-4 py-3">
           {preset.provider === "custom" && (
             <div className="space-y-2">
-              <Label>API Mode</Label>
+              <Label>API 模式</Label>
               <div className="flex flex-wrap gap-2">
                 {(
                   [
@@ -250,7 +250,7 @@ function PresetRow({
 
           {needsApiKey && (
             <div className="space-y-2">
-              <Label>API Key</Label>
+              <Label>API 密钥</Label>
               <Input
                 type="password"
                 value={apiKey}
