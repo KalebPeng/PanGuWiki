@@ -9,10 +9,16 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
+async function parseBody<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  if (!text) return undefined as T
+  return JSON.parse(text) as T
+}
+
 export async function httpGet<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`)
   if (!res.ok) throw new Error(await parseError(res))
-  return res.json()
+  return parseBody<T>(res)
 }
 
 export async function httpPost<T>(path: string, body?: unknown): Promise<T> {
@@ -22,12 +28,11 @@ export async function httpPost<T>(path: string, body?: unknown): Promise<T> {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(await parseError(res))
-  return res.json()
+  return parseBody<T>(res)
 }
 
 export async function httpDelete<T = void>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(await parseError(res))
-  if (res.status === 204) return undefined as T
-  return res.json()
+  return parseBody<T>(res)
 }
