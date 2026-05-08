@@ -1,3 +1,4 @@
+using LlmWiki.Api.Hubs;
 using LlmWiki.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,6 +27,7 @@ builder.Services.AddSingleton<ClaudeCliService>();
 builder.Services.AddSingleton<PdfExtractService>();
 builder.Services.AddSingleton<OfficeExtractService>();
 builder.Services.AddSingleton<VectorService>();
+builder.Services.AddScoped<ClaudeWebSocket>();
 
 var app = builder.Build();
 
@@ -33,6 +35,18 @@ app.UseCors();
 app.UseWebSockets();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.Map("/ws/claude", async context =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = 400;
+        return;
+    }
+    var ws = await context.WebSockets.AcceptWebSocketAsync();
+    var hub = context.RequestServices.GetRequiredService<ClaudeWebSocket>();
+    await hub.Handle(ws);
+});
 
 app.Run("http://localhost:5200");
 
