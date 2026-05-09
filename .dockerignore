@@ -2,7 +2,6 @@ node_modules
 dist
 dist-ssr
 .git
-.env
 .env.local
 .env.*.local
 llm-wiki-server/**/bin
