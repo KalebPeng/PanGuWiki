@@ -11,12 +11,26 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy
-            .WithOrigins(
+        var configuredOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
+        var origins = configuredOrigins is { Length: > 0 }
+            ? configuredOrigins
+            : [
                 "tauri://localhost",
                 "https://tauri.localhost",
                 "http://localhost:1420",
-                "http://localhost:5173")
+                "http://localhost:5173"
+            ];
+
+        if (origins.Contains("*"))
+        {
+            policy.AllowAnyOrigin();
+        }
+        else
+        {
+            policy.WithOrigins(origins);
+        }
+
+        policy
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -52,6 +66,6 @@ app.Map("/ws/claude", async context =>
     await hub.Handle(ws);
 });
 
-app.Run("http://localhost:5200");
+app.Run();
 
 public partial class Program { }

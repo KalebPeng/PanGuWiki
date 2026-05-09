@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+.git
+.env
+.env.local
+.env.*.local
+llm-wiki-server/**/bin
+llm-wiki-server/**/obj
+llm-wiki-server/.vs
+mcp-server/node_modules
+mcp-server/dist
+data
