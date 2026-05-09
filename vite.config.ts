@@ -1,5 +1,5 @@
 import path from "path"
-import { readFileSync } from "fs"
+import { readFileSync, existsSync } from "fs"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
@@ -9,6 +9,19 @@ const host = process.env.TAURI_DEV_HOST
 // Read version from package.json at config-load time so the Settings
 // UI can show the running app version without duplicating the string.
 const pkgJson = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8"))
+
+// Load VITE_* vars from .env.deploy into the build so import.meta.env works
+function loadDeployEnv(): Record<string, string> {
+  const envPath = path.resolve(__dirname, ".env.deploy")
+  if (!existsSync(envPath)) return {}
+  const vars: Record<string, string> = {}
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const m = line.match(/^(VITE_[^=\s]+)=(.*)$/)
+    if (m) vars[m[1]] = m[2].trim()
+  }
+  return vars
+}
+const deployEnv = loadDeployEnv()
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
@@ -20,6 +33,9 @@ export default defineConfig(async () => ({
 
   define: {
     __APP_VERSION__: JSON.stringify(pkgJson.version),
+    ...Object.fromEntries(
+      Object.entries(deployEnv).map(([k, v]) => [`import.meta.env.${k}`, JSON.stringify(v)])
+    ),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
