@@ -288,6 +288,13 @@ export async function autoIngest(
   )
 }
 
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    return err.stack || err.message
+  }
+  return String(err)
+}
+
 async function autoIngestImpl(
   projectPath: string,
   sourcePath: string,
@@ -675,7 +682,11 @@ async function autoIngestImpl(
   // want the safety-net section to slip image refs into the wiki
   // through the back door.
   if (mmCfg.enabled && savedImages.length > 0 && !signal?.aborted) {
-    await injectImagesIntoSourceSummary(pp, fileName, savedImages)
+    try {
+      await injectImagesIntoSourceSummary(pp, fileName, savedImages)
+    } catch (err) {
+      console.error(`[ingest] post-write image injection failed for "${fileName}": ${describeError(err)}`)
+    }
   }
 
   if (writtenPaths.length > 0) {
@@ -683,15 +694,20 @@ async function autoIngestImpl(
       const tree = await listDirectory(pp)
       useWikiStore.getState().setFileTree(tree)
       useWikiStore.getState().bumpDataVersion()
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error(`[ingest] file tree refresh failed for "${fileName}": ${describeError(err)}`)
     }
   }
 
   // ── Step 4: Parse review items ────────────────────────────────
-  const reviewItems = parseReviewBlocks(generation, sp)
-  if (reviewItems.length > 0) {
-    useReviewStore.getState().addItems(reviewItems)
+  let reviewItems: Omit<ReviewItem, "id" | "resolved" | "createdAt">[] = []
+  try {
+    reviewItems = parseReviewBlocks(generation, sp)
+    if (reviewItems.length > 0) {
+      useReviewStore.getState().addItems(reviewItems)
+    }
+  } catch (err) {
+    console.error(`[ingest] review parsing failed for "${fileName}": ${describeError(err)}`)
   }
 
   // ── Step 5: Save to cache ───────────────────────────────────
@@ -704,7 +720,11 @@ async function autoIngestImpl(
   // — they represent deterministic decisions and caching them is
   // safe.
   if (writtenPaths.length > 0 && hardFailures.length === 0) {
-    await saveIngestCache(pp, fileName, sourceContent, writtenPaths)
+    try {
+      await saveIngestCache(pp, fileName, sourceContent, writtenPaths)
+    } catch (err) {
+      console.error(`[ingest] cache save failed for "${fileName}": ${describeError(err)}`)
+    }
   } else if (hardFailures.length > 0) {
     console.warn(
       `[ingest] Skipping cache save for "${fileName}" — ${hardFailures.length} block(s) failed to write: ${hardFailures.join(", ")}`,
@@ -724,12 +744,12 @@ async function autoIngestImpl(
           const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
           const title = titleMatch ? titleMatch[1].trim() : pageId
           await embedPage(pp, pageId, title, content, embCfg)
-        } catch {
-          // non-critical
+        } catch (err) {
+          console.error(`[ingest] embedding failed for "${wpath}": ${describeError(err)}`)
         }
       }
-    } catch {
-      // embedding module not available
+    } catch (err) {
+      console.error(`[ingest] embedding module failed for "${fileName}": ${describeError(err)}`)
     }
   }
 
