@@ -214,13 +214,22 @@ function App() {
             await saveLlmConfig(resolved)
           }
         }
-        // If an env-level API key is configured but the loaded config has none, apply it.
+        // If VITE_DEEPSEEK_API_KEY is set, inject it into both providerConfigs
+        // (drives the settings UI display) and llmConfig (drives actual API calls).
         const envApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY
-        if (envApiKey && !useWikiStore.getState().llmConfig.apiKey) {
-          useWikiStore.getState().setLlmConfig({
-            ...useWikiStore.getState().llmConfig,
-            apiKey: envApiKey,
-          })
+        if (envApiKey) {
+          const state = useWikiStore.getState()
+          const existingOverride = state.providerConfigs["deepseek"] ?? {}
+          if (!existingOverride.apiKey) {
+            const newConfigs = {
+              ...state.providerConfigs,
+              deepseek: { ...existingOverride, apiKey: envApiKey },
+            }
+            state.setProviderConfigs(newConfigs)
+          }
+          if (!state.llmConfig.apiKey) {
+            state.setLlmConfig({ ...state.llmConfig, apiKey: envApiKey })
+          }
         }
         const savedSearchConfig = await loadSearchApiConfig()
         if (savedSearchConfig) {
