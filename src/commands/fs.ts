@@ -64,6 +64,32 @@ interface RawProject {
   path: string
 }
 
+interface RawProjectDiscoveryResponse {
+  root_path: string
+  projects: RawProject[]
+}
+
+export interface ProjectDiscoveryResult {
+  rootPath: string
+  projects: WikiProject[]
+}
+
+export async function discoverProjects(): Promise<ProjectDiscoveryResult> {
+  const raw = await httpGet<RawProjectDiscoveryResponse>('/api/project/discover')
+  const projects = await Promise.all(
+    raw.projects.map(async (project) => {
+      const id = await ensureProjectId(project.path)
+      await upsertProjectInfo(id, project.path, project.name)
+      return { id, name: project.name, path: project.path }
+    }),
+  )
+
+  return {
+    rootPath: raw.root_path,
+    projects,
+  }
+}
+
 export async function createProject(
   name: string,
   path: string,

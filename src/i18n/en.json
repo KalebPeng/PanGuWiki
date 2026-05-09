@@ -23,7 +23,10 @@
   "welcome": {
     "newProject": "New Project",
     "openProject": "Open Project",
-    "recentProjects": "Recent Projects"
+    "recentProjects": "Recent Projects",
+    "serverProjects": "Server Projects",
+    "loadingServerProjects": "Loading server projects...",
+    "serverProjectsRoot": "Current root: {{root}}"
   },
   "project": {
     "createTitle": "Create New Wiki Project",

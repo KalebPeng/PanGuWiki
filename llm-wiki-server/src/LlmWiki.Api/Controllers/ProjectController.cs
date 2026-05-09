@@ -9,6 +9,23 @@ namespace LlmWiki.Api.Controllers;
 [Route("api/project")]
 public class ProjectController(ProjectService projectService, ILogger<ProjectController> logger) : ControllerBase
 {
+    [HttpGet("discover")]
+    public IActionResult Discover()
+    {
+        try
+        {
+            var rootPath = projectService.GetProjectRootPath();
+            var projects = projectService.DiscoverProjects();
+            logger.LogInformation("Project discovery succeeded. RootPath={RootPath} Count={Count}", rootPath, projects.Count);
+            return Ok(new ProjectDiscoveryResponse(rootPath, projects));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Project discovery failed.");
+            return StatusCode(500, new { error = $"Project discovery failed: {ex.Message}" });
+        }
+    }
+
     [HttpPost("create")]
     public IActionResult Create([FromBody] CreateProjectRequest req)
     {

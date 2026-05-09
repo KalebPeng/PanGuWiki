@@ -1,11 +1,17 @@
 using LlmWiki.Api.Services;
+using Microsoft.Extensions.Options;
 
 namespace LlmWiki.Api.Tests;
 
 public class ProjectServiceTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-    private readonly ProjectService _sut = new();
+    private readonly ProjectService _sut;
+
+    public ProjectServiceTests()
+    {
+        _sut = new(Options.Create(new WikiProjectsOptions { RootPath = _tempDir }));
+    }
 
     public void Dispose()
     {
@@ -48,6 +54,27 @@ public class ProjectServiceTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         Directory.CreateDirectory(Path.Combine(_tempDir, "wiki"));
         var ex = Assert.Throws<InvalidOperationException>(() => _sut.OpenProject(_tempDir));
-        Assert.Contains("schema.md", ex.Message);
+        Assert.Contains("Not a valid wiki project", ex.Message);
+    }
+
+    [Fact]
+    public void DiscoverProjects_ReturnsOnlyValidProjectsUnderConfiguredRoot()
+    {
+        var valid = _sut.CreateProject("valid-project", _tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "not-a-project"));
+
+        var projects = _sut.DiscoverProjects();
+
+        var project = Assert.Single(projects);
+        Assert.Equal(valid.Path, project.Path);
+        Assert.Equal("valid-project", project.Name);
+    }
+
+    [Fact]
+    public void GetProjectRootPath_ReturnsConfiguredRoot()
+    {
+        var rootPath = _sut.GetProjectRootPath();
+
+        Assert.Equal(_tempDir.Replace('\\', '/'), rootPath);
     }
 }

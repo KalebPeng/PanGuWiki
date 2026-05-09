@@ -43,6 +43,7 @@ builder.Services.AddSingleton<ClaudeCliService>();
 builder.Services.AddSingleton<PdfExtractService>();
 builder.Services.AddSingleton<OfficeExtractService>();
 builder.Services.AddSingleton<VectorService>();
+builder.Services.Configure<WikiProjectsOptions>(builder.Configuration.GetSection("WikiProjects"));
 builder.Services.Configure<CloudWikiOptions>(builder.Configuration.GetSection("LlmWikiCloud"));
 builder.Services.AddSingleton<CloudWikiService>();
 builder.Services.AddScoped<ClaudeWebSocket>();

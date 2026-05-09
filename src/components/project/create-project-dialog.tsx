@@ -1,11 +1,11 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { createProject, writeFile, createDirectory } from "@/commands/fs"
+import { createProject, writeFile, createDirectory, discoverProjects } from "@/commands/fs"
 import { getTemplate } from "@/lib/templates"
 import { TemplatePicker } from "@/components/project/template-picker"
 import type { WikiProject } from "@/types/wiki"
@@ -21,7 +21,7 @@ interface CreateProjectDialogProps {
   onCreated: (project: WikiProject) => void
 }
 
-const DEFAULT_PROJECT_PARENT_DIR = import.meta.env.VITE_WIKI_PARENT_DIR || "/data/wiki"
+const FALLBACK_PROJECT_PARENT_DIR = import.meta.env.VITE_WIKI_PARENT_DIR || "/data/wiki"
 
 export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: CreateProjectDialogProps) {
   const { t } = useTranslation()
@@ -30,7 +30,21 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
   const [language, setLanguage] = useState<string>("")
   const [error, setError] = useState("")
   const [creating, setCreating] = useState(false)
+  const [projectRoot, setProjectRoot] = useState(FALLBACK_PROJECT_PARENT_DIR)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
+
+  useEffect(() => {
+    if (!isOpen) return
+    discoverProjects()
+      .then((result) => {
+        if (result.rootPath?.trim()) {
+          setProjectRoot(result.rootPath)
+        }
+      })
+      .catch(() => {
+        setProjectRoot(FALLBACK_PROJECT_PARENT_DIR)
+      })
+  }, [isOpen])
 
   async function handleCreate() {
     if (!name.trim()) {
@@ -44,7 +58,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
     setCreating(true)
     setError("")
     try {
-      const project = await createProject(name.trim(), DEFAULT_PROJECT_PARENT_DIR)
+      const project = await createProject(name.trim(), projectRoot)
       const pp = normalizePath(project.path)
 
       const template = getTemplate(selectedTemplate)
@@ -115,7 +129,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
             </p>
           </div>
           <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            项目会自动创建到 <code className="font-mono">{DEFAULT_PROJECT_PARENT_DIR}</code>
+            项目会自动创建到 <code className="font-mono">{projectRoot}</code>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

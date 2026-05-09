@@ -1,12 +1,45 @@
 using LlmWiki.Api.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LlmWiki.Api.Services;
 
-public class ProjectService(ILogger<ProjectService>? logger = null)
+public class WikiProjectsOptions
+{
+    public string RootPath { get; set; } = "/data/wiki";
+}
+
+public class ProjectService(IOptions<WikiProjectsOptions>? options = null, ILogger<ProjectService>? logger = null)
 {
     private readonly ILogger<ProjectService> _logger = logger ?? NullLogger<ProjectService>.Instance;
+    private readonly WikiProjectsOptions _options = options?.Value ?? new();
+
+    public string GetProjectRootPath() => NormalizePath(Path.GetFullPath(_options.RootPath));
+
+    public IReadOnlyList<WikiProject> DiscoverProjects()
+    {
+        var root = Path.GetFullPath(_options.RootPath);
+        if (!Directory.Exists(root))
+        {
+            _logger.LogInformation("Project root does not exist. Root={Root}", root);
+            return [];
+        }
+
+        var projects = Directory.EnumerateDirectories(root)
+            .Where(IsValidWikiProjectDirectory)
+            .Select(path => new WikiProject(new DirectoryInfo(path).Name, NormalizePath(path)))
+            .OrderBy(project => project.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _logger.LogInformation(
+            "Discovered wiki projects. Root={Root} Count={Count} Projects=[{Projects}]",
+            root,
+            projects.Count,
+            string.Join(", ", projects.Select(project => project.Path)));
+
+        return projects;
+    }
 
     public WikiProject CreateProject(string name, string basePath)
     {
@@ -64,13 +97,23 @@ public class ProjectService(ILogger<ProjectService>? logger = null)
     {
         if (!Directory.Exists(path))
             throw new InvalidOperationException($"Path does not exist: '{path}'");
-        if (!File.Exists(Path.Combine(path, "schema.md")))
-            throw new InvalidOperationException($"Not a valid wiki project (missing schema.md): '{path}'");
-        if (!Directory.Exists(Path.Combine(path, "wiki")))
-            throw new InvalidOperationException($"Not a valid wiki project (missing wiki/): '{path}'");
+        if (!IsValidWikiProjectDirectory(path))
+            throw new InvalidOperationException($"Not a valid wiki project: '{path}'");
 
         var name = new DirectoryInfo(path).Name;
         return new WikiProject(name, NormalizePath(path));
+    }
+
+    private static bool IsValidWikiProjectDirectory(string path)
+    {
+        var identityFile = Path.Combine(path, ".llm-wiki", "project.json");
+        if (File.Exists(identityFile))
+            return true;
+
+        return File.Exists(Path.Combine(path, "schema.md"))
+            && File.Exists(Path.Combine(path, "purpose.md"))
+            && Directory.Exists(Path.Combine(path, "wiki"))
+            && Directory.Exists(Path.Combine(path, "raw"));
     }
 
     private static void WriteFile(string root, string relative, string content)

@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_DOTNET_URL: ""
-        VITE_WIKI_PARENT_DIR: "/data/wiki"
+        VITE_WIKI_PARENT_DIR: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
@@ -18,12 +18,13 @@ services:
     environment:
       ASPNETCORE_URLS: "http://0.0.0.0:5200"
       Cors__Origins__0: "${PUBLIC_ORIGIN:-http://localhost:8080}"
+      WikiProjects__RootPath: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
       LlmWikiCloud__ApiKey: "${LLM_WIKI_API_KEY}"
-      LlmWikiCloud__Projects__proj_123: "/data/wiki/PanGu-Wiki"
+      LlmWikiCloud__Projects__proj_123: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}/PanGu-Wiki"
       Qdrant__Host: "qdrant"
       Qdrant__Port: "6334"
     volumes:
-      - "${WIKI_ROOT_PATH:-./data/wiki}:/data/wiki"
+      - "${WIKI_ROOT_PATH:-./data/wiki}:${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
     depends_on:
       - qdrant
     expose:
