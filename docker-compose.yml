@@ -18,11 +18,11 @@ services:
       ASPNETCORE_URLS: "http://0.0.0.0:5200"
       Cors__Origins__0: "${PUBLIC_ORIGIN:-http://localhost:8080}"
       LlmWikiCloud__ApiKey: "${LLM_WIKI_API_KEY}"
-      LlmWikiCloud__Projects__proj_123: "/data/wiki/project"
+      LlmWikiCloud__Projects__proj_123: "/data/wiki/PanGu-Wiki"
       Qdrant__Host: "qdrant"
       Qdrant__Port: "6334"
     volumes:
-      - "${WIKI_PROJECT_PATH:-./data/wiki/project}:/data/wiki/project"
+      - "${WIKI_ROOT_PATH:-./data/wiki}:/data/wiki"
     depends_on:
       - qdrant
     expose:
