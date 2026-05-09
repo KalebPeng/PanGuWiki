@@ -248,7 +248,7 @@ export const useWikiStore = create<WikiState>((set) => ({
     reasoning: { mode: "auto" },
   },
   providerConfigs: {},
-  activePresetId: null,
+  activePresetId: "deepseek",
 
   dataVersion: 0,
 
