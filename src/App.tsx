@@ -214,6 +214,14 @@ function App() {
             await saveLlmConfig(resolved)
           }
         }
+        // If an env-level API key is configured but the loaded config has none, apply it.
+        const envApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY
+        if (envApiKey && !useWikiStore.getState().llmConfig.apiKey) {
+          useWikiStore.getState().setLlmConfig({
+            ...useWikiStore.getState().llmConfig,
+            apiKey: envApiKey,
+          })
+        }
         const savedSearchConfig = await loadSearchApiConfig()
         if (savedSearchConfig) {
           useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
