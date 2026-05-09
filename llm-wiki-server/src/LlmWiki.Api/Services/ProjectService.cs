@@ -1,9 +1,13 @@
 using LlmWiki.Api.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LlmWiki.Api.Services;
 
-public class ProjectService
+public class ProjectService(ILogger<ProjectService>? logger = null)
 {
+    private readonly ILogger<ProjectService> _logger = logger ?? NullLogger<ProjectService>.Instance;
+
     public WikiProject CreateProject(string name, string basePath)
     {
         // Validate name to prevent path traversal
@@ -13,6 +17,13 @@ public class ProjectService
             throw new InvalidOperationException($"Invalid project name '{name}': must not contain path separators or '..'.");
 
         var root = Path.Combine(basePath, name);
+        _logger.LogInformation(
+            "Creating wiki project. Name={ProjectName} BasePath={BasePath} Root={Root} CurrentDirectory={CurrentDirectory}",
+            name,
+            basePath,
+            root,
+            Directory.GetCurrentDirectory());
+
         if (Directory.Exists(root))
             throw new InvalidOperationException($"Directory already exists: '{root}'");
 
@@ -35,6 +46,16 @@ public class ProjectService
         Directory.CreateDirectory(Path.Combine(root, ".obsidian"));
         WriteFile(root, ".obsidian/app.json", """{"attachmentFolderPath":"raw/assets","useMarkdownLinks":false,"newLinkFormat":"shortest"}""");
         WriteFile(root, ".obsidian/appearance.json", """{"baseFontSize":16,"theme":"obsidian"}""");
+
+        var createdEntries = Directory.Exists(root)
+            ? Directory.EnumerateFileSystemEntries(root).Select(Path.GetFileName).ToArray()
+            : [];
+
+        _logger.LogInformation(
+            "Wiki project created. Root={Root} Exists={Exists} Entries=[{Entries}]",
+            root,
+            Directory.Exists(root),
+            string.Join(", ", createdEntries));
 
         return new WikiProject(name, NormalizePath(root));
     }
