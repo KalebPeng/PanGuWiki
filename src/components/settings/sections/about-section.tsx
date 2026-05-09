@@ -165,30 +165,6 @@ export function AboutSection() {
           {t("settings.sections.about.autoCheck")}
         </label>
       </div>
-
-      <div className="rounded-md border p-4 text-sm">
-        <div className="font-medium">LLM Wiki</div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("settings.sections.about.appDescription")}
-          {" "}
-          {/*
-           * Tauri 2's webview doesn't honor `target="_blank"` for
-           * external URLs by default — clicking would either do
-           * nothing or replace the in-app webview with the github
-           * page (terrible UX). Route through the opener plugin
-           * via onClick + preventDefault so it always lands in the
-           * system browser.
-           */}
-          <a
-            className="cursor-pointer underline underline-offset-2 hover:text-primary"
-            href="https://github.com/nashsu/llm_wiki"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            github.com/nashsu/llm_wiki
-          </a>
-        </p>
-      </div>
     </div>
   )
 }
