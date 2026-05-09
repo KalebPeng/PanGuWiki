@@ -5,7 +5,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { FolderOpen } from "lucide-react"
 import { createProject, writeFile, createDirectory } from "@/commands/fs"
 import { getTemplate } from "@/lib/templates"
 import { TemplatePicker } from "@/components/project/template-picker"
@@ -22,23 +21,20 @@ interface CreateProjectDialogProps {
   onCreated: (project: WikiProject) => void
 }
 
+const DEFAULT_PROJECT_PARENT_DIR = import.meta.env.VITE_WIKI_PARENT_DIR || "/data/wiki"
+
 export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: CreateProjectDialogProps) {
   const { t } = useTranslation()
   const [name, setName] = useState("")
-  const [path, setPath] = useState("")
   const [selectedTemplate, setSelectedTemplate] = useState("general")
   const [language, setLanguage] = useState<string>("")
   const [error, setError] = useState("")
   const [creating, setCreating] = useState(false)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
 
-  function handleBrowse() {
-    // 浏览器模式下暂不支持文件夹选择，请手动输入路径。
-  }
-
   async function handleCreate() {
-    if (!name.trim() || !path.trim()) {
-      setError("项目名称和路径不能为空")
+    if (!name.trim()) {
+      setError("项目名称不能为空")
       return
     }
     if (!language) {
@@ -48,7 +44,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
     setCreating(true)
     setError("")
     try {
-      const project = await createProject(name.trim(), path.trim())
+      const project = await createProject(name.trim(), DEFAULT_PROJECT_PARENT_DIR)
       const pp = normalizePath(project.path)
 
       const template = getTemplate(selectedTemplate)
@@ -65,7 +61,6 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
       onCreated(project)
       onOpenChange(false)
       setName("")
-      setPath("")
       setSelectedTemplate("general")
       setLanguage("")
     } catch (err) {
@@ -119,20 +114,8 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
               之后也可以在“设置 → 输出偏好”中修改。
             </p>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="path">{t("project.parentDir")}</Label>
-            <div className="flex gap-2">
-              <Input
-                id="path"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder="例如：D:/Projects"
-                className="flex-1"
-              />
-              <Button variant="outline" size="icon" onClick={handleBrowse} type="button">
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </div>
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            项目会自动创建到 <code className="font-mono">{DEFAULT_PROJECT_PARENT_DIR}</code>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

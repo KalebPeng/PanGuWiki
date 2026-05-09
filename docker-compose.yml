@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_DOTNET_URL: ""
+        VITE_WIKI_PARENT_DIR: "/data/wiki"
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
