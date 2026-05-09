@@ -1,5 +1,41 @@
 # LLM Wiki
 
+## Codex MCP 接入
+
+本项目内置一个独立的单项目 MCP Server，可让 Codex 直接读取某个 LLM Wiki 项目的 `wiki/` 知识库内容，不依赖前端聊天窗口。
+
+先构建 MCP Server：
+
+```powershell
+cd C:\Project\llm_wiki\mcp-server
+npm install
+npm run build
+```
+
+然后在 Codex 的 MCP 配置中加入：
+
+```json
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "command": "node",
+      "args": [
+        "C:/Project/llm_wiki/mcp-server/dist/index.js",
+        "--project",
+        "C:/Project/wiki/产品"
+      ]
+    }
+  }
+}
+```
+
+可用工具：
+
+- `search_wiki`：搜索当前绑定项目的 wiki 页面。
+- `read_wiki_page`：按标题、路径或文件名读取完整 Markdown。
+- `list_wiki_pages`：列出全部 wiki Markdown 页面。
+- `get_wiki_overview`：读取 `purpose.md`、`wiki/overview.md`、`wiki/index.md` 组成的概览上下文。
+
 <p align="center">
   <img src="logo.jpg" width="128" height="128" style="border-radius: 22%;" alt="LLM Wiki Logo">
 </p>
