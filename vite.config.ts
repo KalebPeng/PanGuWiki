@@ -33,9 +33,7 @@ export default defineConfig(async () => ({
 
   define: {
     __APP_VERSION__: JSON.stringify(pkgJson.version),
-    ...Object.fromEntries(
-      Object.entries(deployEnv).map(([k, v]) => [`import.meta.env.${k}`, JSON.stringify(v)])
-    ),
+    __DEEPSEEK_API_KEY__: JSON.stringify(deployEnv.VITE_DEEPSEEK_API_KEY ?? ""),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

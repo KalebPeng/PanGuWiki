@@ -239,7 +239,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   activeView: "wiki",
   llmConfig: {
     provider: "custom",
-    apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY ?? "",
+    apiKey: __DEEPSEEK_API_KEY__,
     maxContextSize: 64000,
     model: "deepseek-chat",
     ollamaUrl: "http://localhost:11434",
