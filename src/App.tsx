@@ -12,6 +12,15 @@ import { AppLayout } from "@/components/layout/app-layout"
 import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
 import type { WikiProject } from "@/types/wiki"
+import type { ProjectLlmSettings } from "@/lib/project-llm-settings"
+
+function hasPersistableProjectLlmSettings(settings: ProjectLlmSettings): boolean {
+  return settings.activePresetId !== null
+    || Object.keys(settings.providerConfigs).length > 0
+    || !!settings.llmConfig.apiKey
+    || !!settings.llmConfig.model
+    || !!settings.llmConfig.customEndpoint
+}
 
 function App() {
   const project = useWikiStore((s) => s.project)
@@ -250,8 +259,36 @@ function App() {
     // project's state is populated.
     const { resetProjectState } = await import("@/lib/reset-project-state")
     await resetProjectState()
+    const {
+      loadProjectLlmSettings,
+      saveProjectLlmSettings,
+    } = await import("@/lib/project-llm-settings")
 
     setProject(proj)
+    const currentStore = useWikiStore.getState()
+    const currentProjectLlmSettings: ProjectLlmSettings = {
+      providerConfigs: currentStore.providerConfigs,
+      activePresetId: currentStore.activePresetId,
+      llmConfig: currentStore.llmConfig,
+    }
+    const persistedProjectLlmSettings = await loadProjectLlmSettings(proj.path)
+    if (persistedProjectLlmSettings) {
+      useWikiStore.getState().setProviderConfigs(persistedProjectLlmSettings.providerConfigs)
+      useWikiStore.getState().setActivePresetId(persistedProjectLlmSettings.activePresetId)
+      useWikiStore.getState().setLlmConfig(persistedProjectLlmSettings.llmConfig)
+      const {
+        saveProviderConfigs,
+        saveActivePresetId,
+        saveLlmConfig,
+      } = await import("@/lib/project-store")
+      await saveProviderConfigs(persistedProjectLlmSettings.providerConfigs)
+      await saveActivePresetId(persistedProjectLlmSettings.activePresetId)
+      await saveLlmConfig(persistedProjectLlmSettings.llmConfig)
+    } else if (hasPersistableProjectLlmSettings(currentProjectLlmSettings)) {
+      saveProjectLlmSettings(proj.path, currentProjectLlmSettings).catch((err) => {
+        console.warn("Failed to migrate local LLM settings into project settings:", err)
+      })
+    }
     const projectOutputLang = await loadOutputLanguage(proj.id)
     useWikiStore.getState().setOutputLanguage(projectOutputLang ?? "auto")
     setSelectedFile(null)

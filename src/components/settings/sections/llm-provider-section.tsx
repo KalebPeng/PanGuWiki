@@ -18,6 +18,7 @@ export function LlmProviderSection() {
   const setActivePresetId = useWikiStore((s) => s.setActivePresetId)
   const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
   const llmConfig = useWikiStore((s) => s.llmConfig)
+  const project = useWikiStore((s) => s.project)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [savedId, setSavedId] = useState<string | null>(null)
@@ -30,15 +31,24 @@ export function LlmProviderSection() {
     const { saveProviderConfigs, saveActivePresetId, saveLlmConfig } = await import(
       "@/lib/project-store"
     )
+    const { saveProjectLlmSettings } = await import("@/lib/project-llm-settings")
     await saveProviderConfigs(newConfigs)
     await saveActivePresetId(newActive)
+    let resolvedLlmConfig = llmConfig
     if (newActive) {
       const preset = LLM_PRESETS.find((p) => p.id === newActive)
       if (preset) {
-        const resolved = resolveConfig(preset, newConfigs[newActive], llmConfig)
-        setLlmConfig(resolved)
-        await saveLlmConfig(resolved)
+        resolvedLlmConfig = resolveConfig(preset, newConfigs[newActive], llmConfig)
+        setLlmConfig(resolvedLlmConfig)
+        await saveLlmConfig(resolvedLlmConfig)
       }
+    }
+    if (project) {
+      await saveProjectLlmSettings(project.path, {
+        providerConfigs: newConfigs,
+        activePresetId: newActive,
+        llmConfig: resolvedLlmConfig,
+      })
     }
   }
 
