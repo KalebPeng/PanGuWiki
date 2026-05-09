@@ -47,6 +47,32 @@ Content-Type: application/json
 
 The server must validate that the token can access `projectId`.
 
+## ASP.NET Backend Configuration
+
+The included .NET backend reads cloud API settings from the `LlmWikiCloud` configuration section.
+
+`appsettings.json` shape:
+
+```json
+{
+  "LlmWikiCloud": {
+    "ApiKey": "replace-with-server-token",
+    "Projects": {
+      "proj_123": "C:/Project/wiki/产品"
+    }
+  }
+}
+```
+
+For deployment, prefer environment variables:
+
+```text
+LlmWikiCloud__ApiKey=replace-with-server-token
+LlmWikiCloud__Projects__proj_123=/data/wiki/product
+```
+
+`projectId` in the MCP config must match a key under `LlmWikiCloud:Projects`.
+
 ## Endpoints
 
 ### List Pages

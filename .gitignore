@@ -26,7 +26,7 @@ docs/
 AGENTS.md
 
 # Benchmark and test data (local only)
-tests/
+/tests/
 
 # Editor directories and files
 .vscode/*
