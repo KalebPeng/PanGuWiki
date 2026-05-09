@@ -1,12 +1,15 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace LlmWiki.Api.Services;
 
 public record DetectResult(bool Installed, string? Version, string? Path, string? Error);
 
-public record ClaudeMessage(string Role, string Content);
+public record ClaudeMessage(
+    [property: JsonPropertyName("role")] string Role,
+    [property: JsonPropertyName("content")] string Content);
 
 public class ClaudeCliService
 {

@@ -10,11 +10,11 @@ dist-ssr/
 dist-rc/
 *.tsbuildinfo
 
-# Rust build artifacts
-src-tauri/target/
-
-# Tauri generated files
-src-tauri/gen/
+# .NET build artifacts
+llm-wiki-server/**/bin/
+llm-wiki-server/**/obj/
+llm-wiki-server/.vs/
+artifacts/
 
 # Environment files
 .env

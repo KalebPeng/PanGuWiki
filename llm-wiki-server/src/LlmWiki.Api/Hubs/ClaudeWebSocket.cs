@@ -12,23 +12,11 @@ public class ClaudeWebSocket(ClaudeCliService claudeCliService)
         var buffer = new byte[1024 * 64];
         while (ws.State == WebSocketState.Open)
         {
-            WebSocketReceiveResult result;
-            try
-            {
-                result = await ws.ReceiveAsync(buffer, CancellationToken.None);
-            }
-            catch
-            {
-                break;
-            }
+            string json;
+            try { json = await ReceiveTextMessage(ws, buffer); }
+            catch { break; }
+            if (json.Length == 0) break;
 
-            if (result.MessageType == WebSocketMessageType.Close)
-            {
-                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
-                break;
-            }
-
-            var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
             JsonElement msg;
             try { msg = JsonDocument.Parse(json).RootElement; }
             catch { continue; }
@@ -75,5 +63,23 @@ public class ClaudeWebSocket(ClaudeCliService claudeCliService)
             await ws.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, CancellationToken.None);
         }
         catch { /* connection closed */ }
+    }
+
+    private static async Task<string> ReceiveTextMessage(WebSocket ws, byte[] buffer)
+    {
+        using var ms = new MemoryStream();
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+                return "";
+            }
+            ms.Write(buffer, 0, result.Count);
+        } while (!result.EndOfMessage);
+
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 }

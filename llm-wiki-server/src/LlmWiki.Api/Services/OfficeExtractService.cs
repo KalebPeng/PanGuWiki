@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
+using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace LlmWiki.Api.Services;
@@ -12,7 +13,8 @@ public class OfficeExtractService
         {
             "docx" => ExtractDocx(path),
             "pptx" => ExtractPptx(path),
-            "xlsx" or "ods" => ExtractSpreadsheet(path),
+            "xlsx" => ExtractOpenXmlSpreadsheet(path),
+            "ods" => ExtractSpreadsheet(path),
             _ => $"[Unsupported: .{ext}]"
         });
 
@@ -96,5 +98,68 @@ public class OfficeExtractService
             return sb.Length > 0 ? sb.ToString() : "[Could not extract data from spreadsheet]";
         }
         catch (Exception ex) { return $"[Spreadsheet extraction failed: {ex.Message}]"; }
+    }
+
+    private static string ExtractOpenXmlSpreadsheet(string path)
+    {
+        try
+        {
+            using var doc = SpreadsheetDocument.Open(path, false);
+            var workbookPart = doc.WorkbookPart;
+            if (workbookPart?.Workbook?.Sheets is null) return "[Could not extract data from spreadsheet]";
+
+            var sb = new System.Text.StringBuilder();
+            var sheets = workbookPart.Workbook.Sheets.Elements<Sheet>().ToList();
+
+            foreach (var sheet in sheets)
+            {
+                var worksheetPart = workbookPart.GetPartById(sheet.Id!) as WorksheetPart;
+                var rows = worksheetPart?.Worksheet?.Descendants<Row>().ToList();
+                if (rows is null || rows.Count == 0) continue;
+
+                if (sheets.Count > 1) sb.AppendLine($"## {sheet.Name}");
+
+                for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+                {
+                    var values = rows[rowIndex]
+                        .Elements<Cell>()
+                        .Select(cell => GetCellText(cell, workbookPart).Replace("|", "\\|"))
+                        .ToList();
+
+                    if (values.All(string.IsNullOrWhiteSpace)) continue;
+
+                    sb.Append("| ").Append(string.Join(" | ", values)).AppendLine(" |");
+                    if (rowIndex == 0)
+                    {
+                        sb.Append('|').Append(string.Concat(Enumerable.Repeat(" --- |", values.Count))).AppendLine();
+                    }
+                }
+
+                sb.AppendLine();
+            }
+
+            return sb.Length > 0 ? sb.ToString() : "[Could not extract data from spreadsheet]";
+        }
+        catch (Exception ex) { return $"[Spreadsheet extraction failed: {ex.Message}]"; }
+    }
+
+    private static string GetCellText(Cell cell, WorkbookPart workbookPart)
+    {
+        var raw = cell.CellValue?.InnerText ?? cell.InnerText ?? "";
+        if (string.IsNullOrEmpty(raw)) return "";
+        var dataType = cell.DataType?.Value;
+        if (dataType is not null && dataType == CellValues.SharedString)
+            return ResolveSharedString(workbookPart, raw);
+        if (dataType is not null && dataType == CellValues.Boolean)
+            return raw == "1" ? "TRUE" : "FALSE";
+        return raw;
+    }
+
+    private static string ResolveSharedString(WorkbookPart workbookPart, string raw)
+    {
+        if (!int.TryParse(raw, out var index)) return raw;
+        var items = workbookPart.SharedStringTablePart?.SharedStringTable?.Elements<SharedStringItem>().ToList();
+        if (items is null || index < 0 || index >= items.Count) return raw;
+        return items[index].InnerText;
     }
 }

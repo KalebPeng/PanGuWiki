@@ -12,6 +12,12 @@ async function parseError(res: Response): Promise<string> {
 async function parseBody<T>(res: Response): Promise<T> {
   const text = await res.text()
   if (!text) return undefined as T
+  const contentType = res.headers.get('Content-Type') ?? ''
+  const trimmed = text.trimStart()
+  const looksJson = trimmed.startsWith('{') || trimmed.startsWith('[')
+  if (!contentType.toLowerCase().includes('application/json') && !looksJson) {
+    return text as T
+  }
   return JSON.parse(text) as T
 }
 

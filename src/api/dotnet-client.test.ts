@@ -32,4 +32,17 @@ describe('dotnet-client', () => {
     )
     await expect(httpGet('/api/file/read?path=/x')).rejects.toThrow('not found')
   })
+
+  it('httpGet returns plain text responses without JSON parsing', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('---\ntitle: Wiki Overview\n---\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      })
+    )
+
+    const result = await httpGet<string>('/api/file/read?path=/wiki/overview.md')
+
+    expect(result).toBe('---\ntitle: Wiki Overview\n---\n')
+  })
 })
