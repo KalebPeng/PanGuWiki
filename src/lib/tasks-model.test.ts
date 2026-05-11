@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  applyTaskFilters,
   mapResearchTaskToViewModel,
   mergeTaskSnapshots,
   pushRecentCompleted,
@@ -357,6 +358,28 @@ describe("mergeTaskSnapshots", () => {
       filesWritten: ["wiki/sources/a.md"],
       rawRef: "activity-a",
     })
+  })
+})
+
+describe("applyTaskFilters", () => {
+  it("keeps only failed merge tasks when both filters are active", () => {
+    const result = applyTaskFilters(
+      [
+        { id: "1", kind: "merge", status: "failed", title: "merge", detail: "", createdAt: 1, source: "dedup-queue", filesWritten: [], relatedPaths: [], canCancel: false, canRetry: true },
+        { id: "2", kind: "ingest", status: "failed", title: "ingest", detail: "", createdAt: 2, source: "ingest-queue", filesWritten: [], relatedPaths: [], canCancel: false, canRetry: true },
+      ],
+      "failed",
+      "merge",
+    )
+    expect(result.map((task) => task.id)).toEqual(["1"])
+  })
+
+  it("returns all tasks when both filters are 'all'", () => {
+    const tasks = [
+      makeTask({ id: "a", kind: "ingest", status: "running" }),
+      makeTask({ id: "b", kind: "research", status: "queued" }),
+    ]
+    expect(applyTaskFilters(tasks, "all", "all")).toHaveLength(2)
   })
 })
 

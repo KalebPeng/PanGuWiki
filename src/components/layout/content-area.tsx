@@ -6,6 +6,7 @@ import { ReviewView } from "@/components/review/review-view"
 import { LintView } from "@/components/lint/lint-view"
 import { SearchView } from "@/components/search/search-view"
 import { GraphView } from "@/components/graph/graph-view"
+import { TasksView } from "@/components/tasks/tasks-view"
 
 export function ContentArea() {
   const activeView = useWikiStore((s) => s.activeView)
@@ -24,11 +25,7 @@ export function ContentArea() {
     case "graph":
       return <GraphView />
     case "tasks":
-      return (
-        <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          Tasks view coming soon.
-        </div>
-      )
+      return <TasksView />
     default:
       return <ChatPanel />
   }

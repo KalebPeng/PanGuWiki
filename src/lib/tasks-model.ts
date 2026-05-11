@@ -1,4 +1,7 @@
 import type { ResearchTask } from "@/stores/research-store"
+import type { IngestTask } from "@/lib/ingest-queue"
+import type { DedupTask } from "@/lib/dedup-queue"
+import type { ActivityItem } from "@/stores/activity-store"
 
 export type TaskKind = "ingest" | "research" | "merge" | "maintenance"
 export type TaskStatus = "running" | "queued" | "failed" | "done"
@@ -183,6 +186,99 @@ export function mergeTaskSnapshots({
     if (bucketDelta !== 0) return bucketDelta
     return taskTimestamp(right) - taskTimestamp(left)
   })
+}
+
+export function applyTaskFilters(
+  tasks: TaskViewModel[],
+  statusFilter: "all" | TaskStatus,
+  kindFilter: "all" | TaskKind,
+): TaskViewModel[] {
+  return tasks.filter((task) => {
+    const statusOk = statusFilter === "all" || task.status === statusFilter
+    const kindOk = kindFilter === "all" || task.kind === kindFilter
+    return statusOk && kindOk
+  })
+}
+
+const INGEST_STATUS_MAP: Record<IngestTask["status"], TaskStatus> = {
+  pending: "queued",
+  processing: "running",
+  done: "done",
+  failed: "failed",
+}
+
+export function mapIngestTaskToViewModel(task: IngestTask): TaskViewModel {
+  const status = INGEST_STATUS_MAP[task.status]
+  const filename = task.sourcePath.split("/").pop() ?? task.sourcePath
+  return {
+    id: task.id,
+    kind: "ingest",
+    source: "ingest-queue",
+    title: filename,
+    status,
+    detail: task.folderContext || task.sourcePath,
+    createdAt: task.addedAt,
+    error: task.error ?? undefined,
+    filesWritten: [],
+    relatedPaths: [],
+    canCancel: task.status === "pending" || task.status === "processing",
+    canRetry: task.status === "failed",
+    rawRef: task.id,
+  }
+}
+
+const DEDUP_STATUS_MAP: Record<DedupTask["status"], TaskStatus> = {
+  pending: "queued",
+  processing: "running",
+  done: "done",
+  failed: "failed",
+}
+
+export function mapDedupTaskToViewModel(task: DedupTask): TaskViewModel {
+  const status = DEDUP_STATUS_MAP[task.status]
+  return {
+    id: task.id,
+    kind: "merge",
+    source: "dedup-queue",
+    title: task.canonicalSlug,
+    status,
+    detail: `Merge ${task.group.slugs.length} pages → ${task.canonicalSlug}`,
+    createdAt: task.addedAt,
+    error: task.error ?? undefined,
+    filesWritten: [],
+    relatedPaths: [],
+    canCancel: task.status === "pending" || task.status === "processing",
+    canRetry: task.status === "failed",
+    rawRef: task.id,
+  }
+}
+
+const ACTIVITY_KIND_MAP: Record<ActivityItem["type"], TaskKind> = {
+  ingest: "ingest",
+  lint: "maintenance",
+  query: "research",
+}
+
+const ACTIVITY_STATUS_MAP: Record<ActivityItem["status"], TaskStatus> = {
+  running: "running",
+  done: "done",
+  error: "failed",
+}
+
+export function mapActivityItemToViewModel(item: ActivityItem): TaskViewModel {
+  return {
+    id: item.id,
+    kind: ACTIVITY_KIND_MAP[item.type] ?? "maintenance",
+    source: "activity-store",
+    title: item.title,
+    status: ACTIVITY_STATUS_MAP[item.status],
+    detail: item.detail,
+    createdAt: item.createdAt,
+    filesWritten: item.filesWritten,
+    relatedPaths: item.filesWritten,
+    canCancel: false,
+    canRetry: false,
+  }
 }
 
 export function pushRecentCompleted(
