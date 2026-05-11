@@ -33,6 +33,7 @@ export function ActivityPanel() {
   const items = useActivityStore((s) => s.items)
   const clearDone = useActivityStore((s) => s.clearDone)
   const project = useWikiStore((s) => s.project)
+  const setActiveView = useWikiStore((s) => s.setActiveView)
   const [expanded, setExpanded] = useState(false)
   const [queueTasks, setQueueTasks] = useState<IngestTask[]>([])
   const prevRunningRef = useRef(0)
@@ -193,6 +194,12 @@ export function ActivityPanel() {
               清除已完成
             </button>
           )}
+          <button
+            onClick={() => setActiveView("tasks")}
+            className="w-full px-3 py-1 text-center text-[10px] text-muted-foreground hover:underline"
+          >
+            打开任务页
+          </button>
         </div>
       )}
     </div>

@@ -257,6 +257,7 @@ const ACTIVITY_KIND_MAP: Record<ActivityItem["type"], TaskKind> = {
   ingest: "ingest",
   lint: "maintenance",
   query: "research",
+  maintenance: "maintenance",
 }
 
 const ACTIVITY_STATUS_MAP: Record<ActivityItem["status"], TaskStatus> = {
