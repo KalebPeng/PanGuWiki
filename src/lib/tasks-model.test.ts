@@ -96,7 +96,7 @@ describe("mapResearchTaskToViewModel", () => {
 })
 
 describe("mergeTaskSnapshots", () => {
-  it("de-duplicates matching ingest queue and activity rows, then sorts by status bucket and recency", () => {
+  it("de-duplicates matching ingest queue and activity rows, keeping richer activity fields on the surviving ingest row", () => {
     const merged = mergeTaskSnapshots({
       queued: [
         makeTask({
@@ -140,7 +140,11 @@ describe("mergeTaskSnapshots", () => {
           title: "paper.pdf",
           status: "running",
           createdAt: 40,
-          updatedAt: 50,
+          updatedAt: 65,
+          detail: "Writing wiki pages",
+          progressLabel: "Writing",
+          filesWritten: ["wiki/sources/paper.md"],
+          relatedPaths: ["wiki/sources/paper.md"],
           rawRef: "activity-older-running",
         }),
         makeTask({
@@ -174,6 +178,58 @@ describe("mergeTaskSnapshots", () => {
       "activity-done-older",
     ])
     expect(merged.find((task) => task.id === "activity-older-running")).toBeUndefined()
+    expect(merged[0]).toMatchObject({
+      id: "ingest-running",
+      source: "ingest-queue",
+      detail: "Writing wiki pages",
+      progressLabel: "Writing",
+      filesWritten: ["wiki/sources/paper.md"],
+      relatedPaths: ["wiki/sources/paper.md"],
+      updatedAt: 65,
+      canCancel: true,
+      rawRef: "ingest-running",
+    })
+  })
+
+  it("includes recent-completed tasks in the unified result after queue-backed tasks disappear", () => {
+    const merged = mergeTaskSnapshots({
+      queued: [
+        makeTask({
+          id: "research-running",
+          kind: "research",
+          source: "research-store",
+          title: "Embeddings",
+          status: "running",
+          createdAt: 100,
+          updatedAt: 120,
+        }),
+      ],
+      recentCompleted: [
+        makeTask({
+          id: "done-buffered",
+          kind: "ingest",
+          source: "ingest-queue",
+          title: "paper.pdf",
+          status: "done",
+          createdAt: 90,
+          updatedAt: 130,
+          detail: "Completed",
+          filesWritten: ["wiki/sources/paper.md"],
+          relatedPaths: ["wiki/sources/paper.md"],
+        }),
+      ],
+    })
+
+    expect(merged.map((task) => task.id)).toEqual([
+      "research-running",
+      "done-buffered",
+    ])
+    expect(merged[1]).toMatchObject({
+      id: "done-buffered",
+      status: "done",
+      filesWritten: ["wiki/sources/paper.md"],
+      relatedPaths: ["wiki/sources/paper.md"],
+    })
   })
 })
 

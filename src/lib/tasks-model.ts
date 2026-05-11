@@ -26,6 +26,7 @@ export interface TaskViewModel {
 interface MergeTaskSnapshotsArgs {
   queued?: readonly TaskViewModel[]
   activity?: readonly TaskViewModel[]
+  recentCompleted?: readonly TaskViewModel[]
 }
 
 const STATUS_SORT_ORDER: Record<TaskStatus, number> = {
@@ -92,13 +93,47 @@ function isMatchingIngestActivity(task: TaskViewModel, queued: readonly TaskView
   )
 }
 
+function mergeTaskPaths(primary: readonly string[], secondary: readonly string[]): string[] {
+  return secondary.length > 0 ? [...secondary] : [...primary]
+}
+
+function mergeIngestTask(queueTask: TaskViewModel, activityTask: TaskViewModel): TaskViewModel {
+  return {
+    ...queueTask,
+    detail: activityTask.detail || queueTask.detail,
+    updatedAt: Math.max(taskTimestamp(queueTask), taskTimestamp(activityTask)),
+    error: activityTask.error ?? queueTask.error,
+    progressLabel: activityTask.progressLabel ?? queueTask.progressLabel,
+    filesWritten: mergeTaskPaths(queueTask.filesWritten, activityTask.filesWritten),
+    relatedPaths: mergeTaskPaths(queueTask.relatedPaths, activityTask.relatedPaths),
+  }
+}
+
 export function mergeTaskSnapshots({
   queued = [],
   activity = [],
+  recentCompleted = [],
 }: MergeTaskSnapshotsArgs): TaskViewModel[] {
-  const merged = [
-    ...queued,
+  const mergedQueued = queued.map((task) => {
+    if (task.source !== "ingest-queue" || task.kind !== "ingest") return task
+
+    const activityMatch = activity.find((candidate) =>
+      candidate.source === "activity-store" &&
+      candidate.kind === "ingest" &&
+      candidate.title === task.title,
+    )
+
+    return activityMatch ? mergeIngestTask(task, activityMatch) : task
+  })
+
+  const activeItems = [
+    ...mergedQueued,
     ...activity.filter((task) => !isMatchingIngestActivity(task, queued)),
+  ]
+  const activeIds = new Set(activeItems.map((task) => task.id))
+  const merged = [
+    ...activeItems,
+    ...recentCompleted.filter((task) => !activeIds.has(task.id)),
   ]
 
   return [...merged].sort((left, right) => {
