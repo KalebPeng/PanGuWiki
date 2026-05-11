@@ -23,6 +23,20 @@ export interface TaskViewModel {
   rawRef?: TaskRawRef
 }
 
+interface MergeTaskSnapshotsArgs {
+  queued?: readonly TaskViewModel[]
+  activity?: readonly TaskViewModel[]
+}
+
+const STATUS_SORT_ORDER: Record<TaskStatus, number> = {
+  running: 0,
+  queued: 1,
+  failed: 2,
+  done: 3,
+}
+
+const RECENT_COMPLETED_LIMIT = 10
+
 const RESEARCH_STATUS_MAP: Record<ResearchTask["status"], TaskStatus> = {
   queued: "queued",
   searching: "running",
@@ -62,4 +76,55 @@ export function mapResearchTaskToViewModel(task: ResearchTask): TaskViewModel {
     canRetry: false,
     rawRef: task.id,
   }
+}
+
+function taskTimestamp(task: TaskViewModel): number {
+  return task.updatedAt ?? task.createdAt
+}
+
+function isMatchingIngestActivity(task: TaskViewModel, queued: readonly TaskViewModel[]): boolean {
+  if (task.source !== "activity-store" || task.kind !== "ingest") return false
+
+  return queued.some((candidate) =>
+    candidate.source === "ingest-queue" &&
+    candidate.kind === "ingest" &&
+    candidate.title === task.title,
+  )
+}
+
+export function mergeTaskSnapshots({
+  queued = [],
+  activity = [],
+}: MergeTaskSnapshotsArgs): TaskViewModel[] {
+  const merged = [
+    ...queued,
+    ...activity.filter((task) => !isMatchingIngestActivity(task, queued)),
+  ]
+
+  return [...merged].sort((left, right) => {
+    const bucketDelta = STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status]
+    if (bucketDelta !== 0) return bucketDelta
+    return taskTimestamp(right) - taskTimestamp(left)
+  })
+}
+
+export function pushRecentCompleted(
+  items: readonly TaskViewModel[],
+  incoming: readonly TaskViewModel[],
+): TaskViewModel[] {
+  const completedIncoming = [...incoming]
+    .filter((task) => task.status === "done")
+    .sort((left, right) => taskTimestamp(right) - taskTimestamp(left))
+
+  const seen = new Set<string>()
+  const next: TaskViewModel[] = []
+
+  for (const task of [...completedIncoming, ...items]) {
+    if (task.status !== "done" || seen.has(task.id)) continue
+    seen.add(task.id)
+    next.push(task)
+    if (next.length === RECENT_COMPLETED_LIMIT) break
+  }
+
+  return next
 }
