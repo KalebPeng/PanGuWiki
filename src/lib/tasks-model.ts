@@ -2,11 +2,13 @@ import type { ResearchTask } from "@/stores/research-store"
 
 export type TaskKind = "ingest" | "research" | "merge" | "maintenance"
 export type TaskStatus = "running" | "queued" | "failed" | "done"
+export type TaskSource = "ingest-queue" | "dedup-queue" | "research-store" | "activity-store"
+export type TaskRawRef = string
 
 export interface TaskViewModel {
   id: string
   kind: TaskKind
-  source: string
+  source: TaskSource
   title: string
   status: TaskStatus
   detail: string
@@ -14,11 +16,11 @@ export interface TaskViewModel {
   updatedAt?: number
   error?: string
   progressLabel?: string
-  filesWritten: number
+  filesWritten: string[]
   relatedPaths: string[]
   canCancel: boolean
   canRetry: boolean
-  rawRef?: unknown
+  rawRef?: TaskRawRef
 }
 
 const RESEARCH_STATUS_MAP: Record<ResearchTask["status"], TaskStatus> = {
@@ -35,27 +37,29 @@ const RESEARCH_PROGRESS_LABELS: Partial<Record<ResearchTask["status"], string>> 
   searching: "Searching web",
   synthesizing: "Synthesizing",
   saving: "Saving notes",
-  done: "Done",
+  done: "Completed",
+  error: "Failed",
 }
 
 export function mapResearchTaskToViewModel(task: ResearchTask): TaskViewModel {
   const status = RESEARCH_STATUS_MAP[task.status]
-  const relatedPaths = task.savedPath ? [task.savedPath] : []
+  const filesWritten = task.savedPath ? [task.savedPath] : []
+  const detail = RESEARCH_PROGRESS_LABELS[task.status] ?? task.status
 
   return {
     id: task.id,
     kind: "research",
-    source: "research",
+    source: "research-store",
     title: task.topic,
     status,
-    detail: task.topic,
+    detail,
     createdAt: task.createdAt,
     error: task.error ?? undefined,
-    progressLabel: RESEARCH_PROGRESS_LABELS[task.status],
-    filesWritten: relatedPaths.length,
-    relatedPaths,
-    canCancel: status === "queued" || status === "running",
-    canRetry: status === "failed",
-    rawRef: task,
+    progressLabel: detail,
+    filesWritten,
+    relatedPaths: filesWritten,
+    canCancel: false,
+    canRetry: false,
+    rawRef: task.id,
   }
 }

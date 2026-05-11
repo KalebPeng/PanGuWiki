@@ -8,6 +8,7 @@
     "sources": "Sources",
     "search": "Search",
     "graph": "Graph",
+    "tasks": "Tasks",
     "lint": "Lint",
     "review": "Review",
     "settings": "Settings",

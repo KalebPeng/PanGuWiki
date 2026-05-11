@@ -18,7 +18,7 @@ const NAV_ITEMS: { view: NavView; icon: typeof FileText; labelKey: string }[] = 
   { view: "sources", icon: FolderOpen, labelKey: "nav.sources" },
   { view: "search", icon: Search, labelKey: "nav.search" },
   { view: "graph", icon: Network, labelKey: "nav.graph" },
-  { view: "tasks", icon: ClipboardList, labelKey: "Tasks" },
+  { view: "tasks", icon: ClipboardList, labelKey: "nav.tasks" },
   { view: "lint", icon: ClipboardCheck, labelKey: "nav.lint" },
   { view: "review", icon: ClipboardList, labelKey: "nav.review" },
 ]
