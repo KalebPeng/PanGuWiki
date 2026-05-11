@@ -13,8 +13,11 @@ describe("mapResearchTaskToViewModel", () => {
         savedPath: null,
         error: null,
         createdAt: 1,
-      }).status,
-    ).toBe("queued")
+      }),
+    ).toMatchObject({
+      kind: "research",
+      status: "queued",
+    })
 
     expect(
       mapResearchTaskToViewModel({
@@ -26,7 +29,10 @@ describe("mapResearchTaskToViewModel", () => {
         savedPath: null,
         error: null,
         createdAt: 2,
-      }).status,
-    ).toBe("running")
+      }),
+    ).toMatchObject({
+      kind: "research",
+      status: "running",
+    })
   })
 })
