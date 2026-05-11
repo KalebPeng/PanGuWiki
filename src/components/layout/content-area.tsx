@@ -23,6 +23,12 @@ export function ContentArea() {
       return <SearchView />
     case "graph":
       return <GraphView />
+    case "tasks":
+      return (
+        <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+          Tasks view coming soon.
+        </div>
+      )
     default:
       return <ChatPanel />
   }
