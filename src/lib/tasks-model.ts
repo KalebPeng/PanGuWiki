@@ -83,14 +83,14 @@ function taskTimestamp(task: TaskViewModel): number {
   return task.updatedAt ?? task.createdAt
 }
 
-function isMatchingIngestActivity(task: TaskViewModel, queued: readonly TaskViewModel[]): boolean {
-  if (task.source !== "activity-store" || task.kind !== "ingest") return false
-
-  return queued.some((candidate) =>
-    candidate.source === "ingest-queue" &&
-    candidate.kind === "ingest" &&
-    candidate.title === task.title,
+function isIngestTask(task: TaskViewModel): boolean {
+  return task.kind === "ingest" && (
+    task.source === "ingest-queue" || task.source === "activity-store"
   )
+}
+
+function ingestMatchKey(task: TaskViewModel): string | null {
+  return isIngestTask(task) ? task.title : null
 }
 
 function mergeTaskPaths(primary: readonly string[], secondary: readonly string[]): string[] {
@@ -109,26 +109,64 @@ function mergeIngestTask(queueTask: TaskViewModel, activityTask: TaskViewModel):
   }
 }
 
+function buildSafeIngestMatches(
+  queued: readonly TaskViewModel[],
+  activity: readonly TaskViewModel[],
+): Map<string, TaskViewModel> {
+  const ingestQueued = queued.filter((task) => task.source === "ingest-queue" && task.kind === "ingest")
+  const ingestActivity = activity.filter((task) => task.source === "activity-store" && task.kind === "ingest")
+  const queueCounts = new Map<string, number>()
+  const activityCounts = new Map<string, number>()
+
+  for (const task of ingestQueued) {
+    const key = ingestMatchKey(task)
+    if (!key) continue
+    queueCounts.set(key, (queueCounts.get(key) ?? 0) + 1)
+  }
+
+  for (const task of ingestActivity) {
+    const key = ingestMatchKey(task)
+    if (!key) continue
+    activityCounts.set(key, (activityCounts.get(key) ?? 0) + 1)
+  }
+
+  const activityByKey = new Map(
+    ingestActivity.map((task) => [ingestMatchKey(task), task] as const),
+  )
+  const matches = new Map<string, TaskViewModel>()
+
+  for (const task of ingestQueued) {
+    const key = ingestMatchKey(task)
+    if (!key) continue
+    if (queueCounts.get(key) !== 1 || activityCounts.get(key) !== 1) continue
+
+    const activityTask = activityByKey.get(key)
+    if (activityTask) {
+      matches.set(task.id, activityTask)
+    }
+  }
+
+  return matches
+}
+
 export function mergeTaskSnapshots({
   queued = [],
   activity = [],
   recentCompleted = [],
 }: MergeTaskSnapshotsArgs): TaskViewModel[] {
+  const safeIngestMatches = buildSafeIngestMatches(queued, activity)
+  const matchedActivityIds = new Set(
+    [...safeIngestMatches.values()].map((task) => task.id),
+  )
+
   const mergedQueued = queued.map((task) => {
-    if (task.source !== "ingest-queue" || task.kind !== "ingest") return task
-
-    const activityMatch = activity.find((candidate) =>
-      candidate.source === "activity-store" &&
-      candidate.kind === "ingest" &&
-      candidate.title === task.title,
-    )
-
+    const activityMatch = safeIngestMatches.get(task.id)
     return activityMatch ? mergeIngestTask(task, activityMatch) : task
   })
 
   const activeItems = [
     ...mergedQueued,
-    ...activity.filter((task) => !isMatchingIngestActivity(task, queued)),
+    ...activity.filter((task) => !matchedActivityIds.has(task.id)),
   ]
   const activeIds = new Set(activeItems.map((task) => task.id))
   const merged = [
@@ -145,16 +183,16 @@ export function mergeTaskSnapshots({
 
 export function pushRecentCompleted(
   items: readonly TaskViewModel[],
-  incoming: readonly TaskViewModel[],
+  incoming: TaskViewModel,
 ): TaskViewModel[] {
-  const completedIncoming = [...incoming]
-    .filter((task) => task.status === "done")
-    .sort((left, right) => taskTimestamp(right) - taskTimestamp(left))
+  if (incoming.status !== "done") {
+    return [...items]
+  }
 
   const seen = new Set<string>()
   const next: TaskViewModel[] = []
 
-  for (const task of [...completedIncoming, ...items]) {
+  for (const task of [incoming, ...items]) {
     if (task.status !== "done" || seen.has(task.id)) continue
     seen.add(task.id)
     next.push(task)

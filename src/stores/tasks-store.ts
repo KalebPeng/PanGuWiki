@@ -37,7 +37,7 @@ export const useTasksStore = create<TasksState>((set) => ({
 
   recordCompletedTask: (task) =>
     set((state) => ({
-      recentCompleted: pushRecentCompleted(state.recentCompleted, [task]),
+      recentCompleted: pushRecentCompleted(state.recentCompleted, task),
     })),
 
   clearState: () => set(DEFAULT_STATE),

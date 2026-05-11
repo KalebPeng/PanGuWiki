@@ -231,10 +231,84 @@ describe("mergeTaskSnapshots", () => {
       relatedPaths: ["wiki/sources/paper.md"],
     })
   })
+
+  it("does not merge ingest rows when the basename match is ambiguous", () => {
+    const merged = mergeTaskSnapshots({
+      queued: [
+        makeTask({
+          id: "ingest-a",
+          kind: "ingest",
+          source: "ingest-queue",
+          title: "paper.pdf",
+          status: "running",
+          createdAt: 10,
+          updatedAt: 10,
+          detail: "Queue A",
+          rawRef: "queue-a",
+        }),
+        makeTask({
+          id: "ingest-b",
+          kind: "ingest",
+          source: "ingest-queue",
+          title: "paper.pdf",
+          status: "queued",
+          createdAt: 9,
+          updatedAt: 9,
+          detail: "Queue B",
+          rawRef: "queue-b",
+        }),
+      ],
+      activity: [
+        makeTask({
+          id: "activity-a",
+          kind: "ingest",
+          source: "activity-store",
+          title: "paper.pdf",
+          status: "running",
+          createdAt: 20,
+          updatedAt: 20,
+          detail: "Activity A",
+          filesWritten: ["wiki/sources/a.md"],
+          relatedPaths: ["wiki/sources/a.md"],
+          rawRef: "activity-a",
+        }),
+        makeTask({
+          id: "activity-b",
+          kind: "ingest",
+          source: "activity-store",
+          title: "paper.pdf",
+          status: "done",
+          createdAt: 19,
+          updatedAt: 19,
+          detail: "Activity B",
+          filesWritten: ["wiki/sources/b.md"],
+          relatedPaths: ["wiki/sources/b.md"],
+          rawRef: "activity-b",
+        }),
+      ],
+    })
+
+    expect(merged.map((task) => task.id)).toEqual([
+      "activity-a",
+      "ingest-a",
+      "ingest-b",
+      "activity-b",
+    ])
+    expect(merged.find((task) => task.id === "ingest-a")).toMatchObject({
+      detail: "Queue A",
+      filesWritten: [],
+      rawRef: "queue-a",
+    })
+    expect(merged.find((task) => task.id === "activity-a")).toMatchObject({
+      detail: "Activity A",
+      filesWritten: ["wiki/sources/a.md"],
+      rawRef: "activity-a",
+    })
+  })
 })
 
 describe("pushRecentCompleted", () => {
-  it("prepends newly completed tasks, de-duplicates by id, and trims the buffer to 10 items", () => {
+  it("prepends a newly completed task, de-duplicates by id, and trims the buffer to 10 items", () => {
     const existing = Array.from({ length: 10 }, (_, index) =>
       makeTask({
         id: `done-${index}`,
@@ -244,26 +318,24 @@ describe("pushRecentCompleted", () => {
       }),
     )
 
-    const next = pushRecentCompleted(existing, [
-      makeTask({
-        id: "done-3",
-        status: "done",
-        createdAt: 3,
-        updatedAt: 300,
-      }),
-      makeTask({
-        id: "done-11",
-        status: "done",
-        createdAt: 11,
-        updatedAt: 311,
-      }),
-      makeTask({
-        id: "running-ignore",
-        status: "running",
-        createdAt: 12,
-        updatedAt: 312,
-      }),
-    ])
+    const deduped = pushRecentCompleted(existing, makeTask({
+      id: "done-3",
+      status: "done",
+      createdAt: 3,
+      updatedAt: 300,
+    }))
+    const ignored = pushRecentCompleted(deduped, makeTask({
+      id: "running-ignore",
+      status: "running",
+      createdAt: 12,
+      updatedAt: 312,
+    }))
+    const next = pushRecentCompleted(ignored, makeTask({
+      id: "done-11",
+      status: "done",
+      createdAt: 11,
+      updatedAt: 311,
+    }))
 
     expect(next).toHaveLength(10)
     expect(next.map((task) => task.id)).toEqual([
