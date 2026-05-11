@@ -42,3 +42,9 @@ export async function httpDelete<T = void>(path: string): Promise<T> {
   if (!res.ok) throw new Error(await parseError(res))
   return parseBody<T>(res)
 }
+
+export async function httpUpload<T>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, { method: 'POST', body: formData })
+  if (!res.ok) throw new Error(await parseError(res))
+  return parseBody<T>(res)
+}

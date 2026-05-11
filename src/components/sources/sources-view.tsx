@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback } from "react"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown } from "lucide-react"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
-import { copyDirectory, listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile } from "@/commands/fs"
+import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
 import { useTranslation } from "react-i18next"
-import { normalizePath, getFileName } from "@/lib/path-utils"
+import { normalizePath } from "@/lib/path-utils"
 import { parseSources, writeSources } from "@/lib/sources-merge"
 import { decidePageFate } from "@/lib/source-delete-decision"
 import { removeFromIngestCache } from "@/lib/ingest-cache"
@@ -16,6 +16,9 @@ import {
   collectAllFilesIncludingDot,
   decideDeleteClick,
 } from "@/lib/sources-tree-delete"
+
+const INGESTABLE_EXTS = ["md", "mdx", "txt", "pdf", "docx", "pptx", "xlsx", "xls",
+                         "csv", "json", "html", "htm", "rtf", "xml", "yaml", "yml"]
 
 export function SourcesView() {
   const { t } = useTranslation()
@@ -28,6 +31,9 @@ export function SourcesView() {
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   /**
    * Path of the source-tree node currently in "click again to
    * confirm delete" state. Lifted up here (rather than living
@@ -68,72 +74,74 @@ export function SourcesView() {
     loadSources()
   }, [loadSources])
 
-  async function handleImport() {
-    if (!project) return
-    // File picker dialog not available in browser mode.
-    // Please place files directly in the project's raw/sources/ folder
-    // and click Refresh to update the list.
-    window.alert("浏览器模式下暂不支持通过对话框导入文件。\n请直接把文件复制到项目的 raw/sources/ 目录，然后点击“刷新”。")
+  function handleImport() {
+    fileInputRef.current?.click()
   }
 
-  async function handleImportFolder() {
-    if (!project) return
-    // Folder picker dialog not available in browser mode.
-    const selected = window.prompt("输入要导入的资料文件夹路径：")
-    if (!selected || !selected.trim()) return
+  function handleImportFolder() {
+    folderInputRef.current?.click()
+  }
 
+  async function processUploadedFiles(files: { blob: File; relativePath: string }[]) {
+    if (!project || files.length === 0) return
     setImporting(true)
     const pp = normalizePath(project.path)
-    const folderName = getFileName(selected.trim()) || "imported"
-    const destDir = `${pp}/raw/sources/${folderName}`
-
+    const destDir = `${pp}/raw/sources`
     try {
-      // Recursively copy the folder
-      const copiedFiles: string[] = await copyDirectory(selected.trim(), destDir)
-
-      console.log(`[Folder Import] Copied ${copiedFiles.length} files from ${folderName}`)
-
-      // Preprocess all files
-      for (const filePath of copiedFiles) {
-        preprocessFile(filePath).catch(() => {})
-      }
-
-      setImporting(false)
+      const savedPaths = await uploadFiles(destDir, files)
+      for (const p of savedPaths) preprocessFile(p).catch(() => {})
       await loadSources()
-
-      // Build ingest tasks with folder context
       if (hasUsableLlm(llmConfig)) {
-        const tasks = copiedFiles
-          .filter((fp) => {
-            const ext = fp.split(".").pop()?.toLowerCase() ?? ""
-            // Only ingest text-based files, skip images/media
-            return ["md", "mdx", "txt", "pdf", "docx", "pptx", "xlsx", "xls",
-                    "csv", "json", "html", "htm", "rtf", "xml", "yaml", "yml"].includes(ext)
+        const tasks = savedPaths
+          .filter((fp) => INGESTABLE_EXTS.includes(fp.split(".").pop()?.toLowerCase() ?? ""))
+          .map((fp) => {
+            const rel = normalizePath(fp).replace(normalizePath(destDir) + "/", "")
+            const parts = rel.split("/")
+            parts.pop()
+            return { sourcePath: fp, folderContext: parts.join(" > ") }
           })
-          .map((filePath) => {
-            // Build folder context from relative path. On Windows the
-            // Rust-returned filePath uses backslashes while destDir was
-            // composed with forward slashes — normalize both sides before
-            // the replace so this works on every platform.
-            const normFilePath = normalizePath(filePath)
-            const normDestDir = normalizePath(destDir)
-            const relPath = normFilePath.replace(normDestDir + "/", "")
-            const parts = relPath.split("/")
-            parts.pop() // remove filename
-            const context = parts.length > 0
-              ? `${folderName} > ${parts.join(" > ")}`
-              : folderName
-            return { sourcePath: filePath, folderContext: context }
-          })
-
-        if (tasks.length > 0) {
-          await enqueueBatch(project.id, tasks)
-          console.log(`[Folder Import] Enqueued ${tasks.length} files for ingest`)
-        }
+        if (tasks.length > 0) await enqueueBatch(project.id, tasks)
       }
     } catch (err) {
-      console.error(`Failed to import folder:`, err)
+      console.error("Upload failed:", err)
+    } finally {
       setImporting(false)
+    }
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragOver(false)
+    const items = Array.from(e.dataTransfer.items)
+    const collected: { blob: File; relativePath: string }[] = []
+    await Promise.all(
+      items.map((item) => {
+        const entry = item.webkitGetAsEntry()
+        if (!entry) return
+        return collectFromEntry(entry, "", collected)
+      }),
+    )
+    await processUploadedFiles(collected)
+  }
+
+  async function collectFromEntry(
+    entry: FileSystemEntry,
+    prefix: string,
+    out: { blob: File; relativePath: string }[],
+  ): Promise<void> {
+    if (entry.isFile) {
+      const file = await new Promise<File>((res, rej) =>
+        (entry as FileSystemFileEntry).file(res, rej),
+      )
+      out.push({ blob: file, relativePath: prefix ? `${prefix}/${entry.name}` : entry.name })
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader()
+      const entries = await readAllEntries(reader)
+      await Promise.all(
+        entries.map((e) =>
+          collectFromEntry(e, prefix ? `${prefix}/${entry.name}` : entry.name, out),
+        ),
+      )
     }
   }
 
@@ -364,7 +372,47 @@ export function SourcesView() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="relative flex h-full flex-col"
+      onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true) }}
+      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false) }}
+      onDrop={handleDrop}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) =>
+          processUploadedFiles(
+            Array.from(e.target.files ?? []).map((f) => ({ blob: f, relativePath: f.name })),
+          )
+        }
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        {...({ webkitdirectory: "" } as any)}
+        className="hidden"
+        onChange={(e) =>
+          processUploadedFiles(
+            Array.from(e.target.files ?? []).map((f) => ({
+              blob: f,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              relativePath: (f as any).webkitRelativePath || f.name,
+            })),
+          )
+        }
+      />
+      {isDragOver && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary bg-background/90 text-primary">
+          <Upload className="h-10 w-10" />
+          <p className="text-sm font-medium">松开以上传文件</p>
+        </div>
+      )}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
         <div className="flex gap-1">
@@ -422,6 +470,10 @@ export function SourcesView() {
   )
 }
 
+
+function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  return new Promise((res, rej) => reader.readEntries(res, rej))
+}
 
 function filterTree(nodes: FileNode[]): FileNode[] {
   return nodes

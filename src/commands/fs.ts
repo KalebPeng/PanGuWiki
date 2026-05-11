@@ -1,6 +1,6 @@
 import type { FileNode, WikiProject } from "@/types/wiki"
 import { ensureProjectId, upsertProjectInfo } from "@/lib/project-identity"
-import { httpGet, httpPost, httpDelete } from "@/api/dotnet-client"
+import { httpGet, httpPost, httpDelete, httpUpload } from "@/api/dotnet-client"
 
 const enc = encodeURIComponent
 
@@ -32,7 +32,7 @@ export async function findRelatedWikiPages(
   projectPath: string,
   sourceName: string,
 ): Promise<string[]> {
-  return httpPost<string[]>('/api/file/find-related', { projectPath, sourceName })
+  return httpPost<string[]>('/api/file/find-related', { project_path: projectPath, source_name: sourceName })
 }
 
 export async function createDirectory(path: string): Promise<void> {
@@ -116,4 +116,16 @@ export async function copyDirectory(
   destination: string,
 ): Promise<string[]> {
   return httpPost<string[]>('/api/file/copy-directory', { source, destination })
+}
+
+export async function uploadFiles(
+  destDir: string,
+  files: { blob: File; relativePath: string }[],
+): Promise<string[]> {
+  const formData = new FormData()
+  formData.append('destDir', destDir)
+  for (const f of files) {
+    formData.append('files', f.blob, f.relativePath)
+  }
+  return httpUpload<string[]>('/api/file/upload', formData)
 }

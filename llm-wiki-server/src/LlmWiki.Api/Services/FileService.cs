@@ -86,6 +86,24 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
         return Task.CompletedTask;
     }
 
+    public async Task<List<string>> UploadFiles(string destDir, IFormFileCollection files)
+    {
+        EnsurePathWithinWikiProject(destDir, allowNonExistent: true);
+        var saved = new List<string>();
+        foreach (var file in files)
+        {
+            var rel = file.FileName.Replace('\\', '/').TrimStart('/');
+            if (rel.Contains("..")) throw new InvalidOperationException($"Invalid relative path: '{file.FileName}'");
+            var fullPath = Path.GetFullPath(Path.Combine(destDir, rel));
+            EnsurePathWithinWikiProject(fullPath, allowNonExistent: true);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            await using var stream = File.Create(fullPath);
+            await file.CopyToAsync(stream);
+            saved.Add(fullPath.Replace('\\', '/'));
+        }
+        return saved;
+    }
+
     public Task<List<string>> CopyDirectory(string source, string destination)
     {
         EnsureExistingDirectory(source);

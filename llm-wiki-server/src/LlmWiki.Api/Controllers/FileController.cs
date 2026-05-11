@@ -81,6 +81,14 @@ public class FileController(FileService fileService) : ControllerBase
         try { await fileService.CreateDirectory(req.Path); return Ok(); }
         catch (Exception ex) { return BadRequest(new { error = ex.Message }); }
     }
+
+    [HttpPost("upload")]
+    [RequestSizeLimit(500_000_000)]
+    public async Task<IActionResult> Upload([FromForm] string destDir, IFormFileCollection files)
+    {
+        try { return Ok(await fileService.UploadFiles(destDir, files)); }
+        catch (Exception ex) { return BadRequest(new { error = ex.Message }); }
+    }
 }
 
 public record WriteRequest(string Path, string Contents);
