@@ -139,9 +139,13 @@ function buildSafeIngestMatches(
     const key = ingestMatchKey(task)
     if (!key) continue
     if (queueCounts.get(key) !== 1 || activityCounts.get(key) !== 1) continue
+    // Basenames are not stable identities. We only merge the one-to-one
+    // pair when both sides are the live in-flight representation; any
+    // stale/completed row with the same basename stays separate on purpose.
+    if (task.status !== "running") continue
 
     const activityTask = activityByKey.get(key)
-    if (activityTask) {
+    if (activityTask && activityTask.status === "running") {
       matches.set(task.id, activityTask)
     }
   }

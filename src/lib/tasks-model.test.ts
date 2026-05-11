@@ -96,7 +96,7 @@ describe("mapResearchTaskToViewModel", () => {
 })
 
 describe("mergeTaskSnapshots", () => {
-  it("de-duplicates matching ingest queue and activity rows, keeping richer activity fields on the surviving ingest row", () => {
+  it("de-duplicates the live running/running ingest pair, keeping richer activity fields on the surviving ingest row", () => {
     const merged = mergeTaskSnapshots({
       queued: [
         makeTask({
@@ -188,6 +188,59 @@ describe("mergeTaskSnapshots", () => {
       updatedAt: 65,
       canCancel: true,
       rawRef: "ingest-running",
+    })
+  })
+
+  it("does not merge a stale done ingest activity into a live queue row with the same basename", () => {
+    const merged = mergeTaskSnapshots({
+      queued: [
+        makeTask({
+          id: "ingest-running",
+          kind: "ingest",
+          source: "ingest-queue",
+          title: "paper.pdf",
+          status: "running",
+          createdAt: 10,
+          updatedAt: 60,
+          detail: "Queue detail",
+          rawRef: "ingest-running",
+          canCancel: true,
+        }),
+      ],
+      activity: [
+        makeTask({
+          id: "activity-done",
+          kind: "ingest",
+          source: "activity-store",
+          title: "paper.pdf",
+          status: "done",
+          createdAt: 40,
+          updatedAt: 65,
+          detail: "Historical completed activity",
+          progressLabel: "Completed",
+          filesWritten: ["wiki/sources/paper.md"],
+          relatedPaths: ["wiki/sources/paper.md"],
+          rawRef: "activity-done",
+        }),
+      ],
+    })
+
+    expect(merged.map((task) => task.id)).toEqual([
+      "ingest-running",
+      "activity-done",
+    ])
+    expect(merged[0]).toMatchObject({
+      id: "ingest-running",
+      detail: "Queue detail",
+      filesWritten: [],
+      updatedAt: 60,
+      rawRef: "ingest-running",
+    })
+    expect(merged[1]).toMatchObject({
+      id: "activity-done",
+      status: "done",
+      detail: "Historical completed activity",
+      filesWritten: ["wiki/sources/paper.md"],
     })
   })
 
