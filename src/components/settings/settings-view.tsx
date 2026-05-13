@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useChatStore } from "@/stores/chat-store"
 import { toBackendProxyConfig } from "@/lib/proxy-config"
-import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
 import { saveLanguage } from "@/lib/project-store"
 import type { SettingsDraft, DraftSetter } from "./settings-types"
 import { LlmProviderSection } from "./sections/llm-provider-section"
@@ -123,17 +122,7 @@ export function SettingsView() {
   const setProxyConfig = useWikiStore((s) => s.setProxyConfig)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
-  // Drives the red dot next to the "About" row in the settings
-  // sidebar. Uses `hasAvailableUpdate` (NOT `shouldShowUpdateBanner`)
-  // so the indicator remains even after the user dismisses the
-  // top banner — the user explicitly asked for the gear/About dots
-  // to keep showing as a signpost so they can find the update
-  // again later. The top banner stays gated by the dismiss
-  // preference so the more aggressive interruption only fires once
-  // per version.
-  const updateAvailable = useUpdateStore((s) => hasAvailableUpdate(s))
-
-  const [active, setActive] = useState<CategoryId>("llm")
+const [active, setActive] = useState<CategoryId>("llm")
   const [saved, setSaved] = useState(false)
   const [draft, setDraftState] = useState<SettingsDraft>(() =>
     initialDraft(
@@ -310,11 +299,6 @@ export function SettingsView() {
             // Mirror the gear-icon dot inside the settings sidebar
             // so the user can find which sub-section the update
             // notification is pointing at. Update info lives in
-            // the About panel, so the dot follows the About row.
-            // Same store, same gating — once dismissed, both
-            // disappear together.
-            const showUpdateDot =
-              c.id === "about" && updateAvailable
             return (
               <button
                 key={c.id}
@@ -333,13 +317,6 @@ export function SettingsView() {
                   }`}
                 />
                 <span className="truncate">{t(c.labelKey)}</span>
-                {showUpdateDot && (
-                  <span
-                    className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
-                    aria-label={t("nav.updateAvailable")}
-                    title={t("nav.updateAvailable")}
-                  />
-                )}
               </button>
             )
           })}
