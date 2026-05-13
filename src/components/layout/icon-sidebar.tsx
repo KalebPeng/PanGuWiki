@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react"
 import {
   FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe,
 } from "lucide-react"
@@ -34,23 +33,6 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
   const researchPanelOpen = useResearchStore((s) => s.panelOpen)
   const researchActiveCount = useResearchStore((s) => s.tasks.filter((t) => t.status !== "done" && t.status !== "error").length)
   const toggleResearchPanel = useResearchStore((s) => s.setPanelOpen)
-  // Daemon health check
-  const [daemonStatus, setDaemonStatus] = useState<string>("starting")
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const { clipServerStatus } = await import("@/commands/fs")
-        const status = await clipServerStatus()
-        setDaemonStatus(status)
-      } catch {
-        setDaemonStatus("error")
-      }
-    }
-    check()
-    const interval = setInterval(check, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
   return (
     <TooltipProvider delay={300}>
       <div className="flex h-full w-12 flex-col items-center border-r bg-muted/50 py-2">
@@ -107,27 +89,8 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
             <TooltipContent side="right">深度研究</TooltipContent>
           </Tooltip>
         </div>
-        {/* Bottom: daemon status + settings + switch project */}
+        {/* Bottom: settings + switch project */}
         <div className="flex flex-col items-center gap-1 pb-1">
-          {/* Daemon status indicator */}
-          <Tooltip>
-            <TooltipTrigger className="flex h-6 w-6 items-center justify-center">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  daemonStatus === "running" ? "bg-emerald-500" :
-                  daemonStatus === "starting" ? "bg-amber-400 animate-pulse" :
-                  daemonStatus === "port_conflict" ? "bg-red-500" :
-                  "bg-red-500 animate-pulse"
-                }`}
-              />
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {daemonStatus === "running" && "Clip 服务运行中"}
-              {daemonStatus === "starting" && "Clip 服务启动中..."}
-              {daemonStatus === "port_conflict" && "19827 端口已被占用，Web Clipper 不可用。"}
-              {daemonStatus === "error" && "Clip 服务异常，正在重启..."}
-            </TooltipContent>
-          </Tooltip>
           <Tooltip>
             <TooltipTrigger
               onClick={() => setActiveView("settings")}
