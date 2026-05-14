@@ -152,6 +152,37 @@ function extractWikilinks(content: string): string[] {
   return links
 }
 
+/** 从 frontmatter 的 related 字段提取关联页面名称（行内和块两种格式）*/
+function extractRelatedFromFrontmatter(content: string): string[] {
+  // 仅处理 frontmatter 块（--- ... ---）
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
+  if (!fmMatch) return []
+  const fm = fmMatch[1]
+
+  // 行内格式: related: ["页面A", "页面B"] 或 related: [页面A, 页面B]
+  const inlineMatch = fm.match(/^related:\s*\[([^\]]*)\]/m)
+  if (inlineMatch) {
+    return inlineMatch[1]
+      .split(",")
+      .map(s => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean)
+  }
+
+  // 块格式:
+  // related:
+  //   - 页面A
+  //   - 页面B
+  const blockMatch = fm.match(/^related:\s*\n((?:\s+-\s+.+\n?)+)/m)
+  if (blockMatch) {
+    return blockMatch[1]
+      .split("\n")
+      .map(line => line.replace(/^\s+-\s+/, "").trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean)
+  }
+
+  return []
+}
+
 function fileNameToId(fileName: string): string {
   return fileName.replace(/\.md$/, "")
 }
@@ -194,7 +225,10 @@ export async function buildWikiGraph(
       label: extractTitle(content, file.name),
       type: extractType(content),
       path: file.path,
-      links: extractWikilinks(content),
+      links: [
+        ...extractWikilinks(content),
+        ...extractRelatedFromFrontmatter(content),
+      ],
     })
   }
 
