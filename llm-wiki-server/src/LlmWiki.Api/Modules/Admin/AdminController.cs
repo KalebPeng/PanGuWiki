@@ -5,6 +5,7 @@ using LlmWiki.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
 namespace LlmWiki.Api.Modules.Admin;
@@ -13,7 +14,10 @@ namespace LlmWiki.Api.Modules.Admin;
 [Route("api/admin")]
 [Authorize]
 [RequireSuperAdmin]
-public class AdminController(AppDbContext db, ProjectService projectService) : ControllerBase
+public class AdminController(
+    AppDbContext db,
+    ProjectService projectService,
+    IOptions<WikiProjectsOptions> wikiOptions) : ControllerBase
 {
     // ── Records ───────────────────────────────────────────────────────────────
 
@@ -32,7 +36,8 @@ public class AdminController(AppDbContext db, ProjectService projectService) : C
         Guid Id, Guid OrgId, string Name, string Slug,
         string WikiProjectPath, int MemberCount, DateTime CreatedAt);
 
-    public record CreateDeptRequest(string Name, string Slug, string WikiProjectPath);
+    // wiki_project_path 由服务端根据 WikiProjects:RootPath 自动生成，不需要前端传入
+    public record CreateDeptRequest(string Name, string Slug);
 
     public record AdminMemberResponse(
         Guid Id, Guid UserId, string Email, string DisplayName, string Role, DateTime JoinedAt);
@@ -168,16 +173,16 @@ public class AdminController(AppDbContext db, ProjectService projectService) : C
             return NotFound(new ErrorResponse("Organization not found"));
 
         if (string.IsNullOrWhiteSpace(request.Name) ||
-            string.IsNullOrWhiteSpace(request.Slug) ||
-            string.IsNullOrWhiteSpace(request.WikiProjectPath))
-            return BadRequest(new ErrorResponse("Name, slug and wiki_project_path are required"));
+            string.IsNullOrWhiteSpace(request.Slug))
+            return BadRequest(new ErrorResponse("Name and slug are required"));
 
         var slugLower = request.Slug.ToLowerInvariant();
         if (await db.Departments.AnyAsync(d => d.OrgId == orgId && d.Slug == slugLower))
             return Conflict(new ErrorResponse("Slug already used in this organization"));
 
-        // 初始化 Wiki 目录
-        var project = projectService.CreateProject(request.Name, request.WikiProjectPath);
+        // 路径自动生成：WikiProjects:RootPath / 部门名称
+        var rootPath = wikiOptions.Value.RootPath ?? "/data/wiki";
+        var project = projectService.CreateProject(request.Name, rootPath);
 
         var dept = new Department
         {

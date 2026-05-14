@@ -38,7 +38,6 @@ export function AdminOrgDetailPage() {
   const [showDeptForm, setShowDeptForm] = useState(false)
   const [deptName, setDeptName] = useState('')
   const [deptSlug, setDeptSlug] = useState('')
-  const [deptPath, setDeptPath] = useState('')
   const [creating, setCreating] = useState(false)
   const [deptFormError, setDeptFormError] = useState<string | null>(null)
 
@@ -93,9 +92,9 @@ export function AdminOrgDetailPage() {
     setDeptFormError(null)
     try {
       await httpPost(`/api/admin/orgs/${orgId}/departments`, {
-        name: deptName, slug: deptSlug, wiki_project_path: deptPath
+        name: deptName, slug: deptSlug
       })
-      setDeptName(''); setDeptSlug(''); setDeptPath(''); setShowDeptForm(false)
+      setDeptName(''); setDeptSlug(''); setShowDeptForm(false)
       loadDepts()
     } catch (e) {
       setDeptFormError(e instanceof Error ? e.message : '创建失败')
@@ -177,12 +176,6 @@ export function AdminOrgDetailPage() {
             <div>
               <label className="mb-1 block text-xs text-muted-foreground">Slug</label>
               <input value={deptSlug} onChange={e => setDeptSlug(e.target.value)} required
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Wiki 路径</label>
-              <input value={deptPath} onChange={e => setDeptPath(e.target.value)} required
-                placeholder="C:\Project\wiki\部门"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
             </div>
           </div>
