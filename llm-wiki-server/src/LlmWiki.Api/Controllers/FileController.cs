@@ -1,8 +1,10 @@
 using LlmWiki.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LlmWiki.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/file")]
 public class FileController(FileService fileService) : ControllerBase

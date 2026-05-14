@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
@@ -11,6 +12,16 @@ import { startClipWatcher } from "@/lib/clip-watcher"
 import { AppLayout } from "@/components/layout/app-layout"
 import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
+import { AuthGuard } from "@/components/auth/AuthGuard"
+import { AdminGuard } from "@/components/auth/AdminGuard"
+import { LoginPage } from "@/pages/LoginPage"
+import { RegisterPage } from "@/pages/RegisterPage"
+import { DeptSelectPage } from "@/pages/DeptSelectPage"
+import { AdminLayout } from "@/pages/admin/AdminLayout"
+import { AdminUsersPage } from "@/pages/admin/AdminUsersPage"
+import { AdminOrgsPage } from "@/pages/admin/AdminOrgsPage"
+import { AdminOrgDetailPage } from "@/pages/admin/AdminOrgDetailPage"
+import { useOrgStore } from "@/stores/org-store"
 import type { WikiProject } from "@/types/wiki"
 import type { ProjectLlmSettings } from "@/lib/project-llm-settings"
 
@@ -23,6 +34,7 @@ function hasPersistableProjectLlmSettings(settings: ProjectLlmSettings): boolean
 }
 
 function App() {
+  const IS_MULTI_TENANT = import.meta.env.VITE_MULTI_TENANT === 'true'
   const project = useWikiStore((s) => s.project)
   const setProject = useWikiStore((s) => s.setProject)
   const setFileTree = useWikiStore((s) => s.setFileTree)
@@ -251,13 +263,16 @@ function App() {
         if (savedLang) {
           await i18n.changeLanguage(savedLang)
         }
-        const lastProject = await getLastProject()
-        if (lastProject) {
-          try {
-            const proj = await openProject(lastProject.path)
-            await handleProjectOpened(proj)
-          } catch {
-            // Last project no longer valid
+        // 多租户模式下跳过单机项目自动恢复（项目由部门选择决定）
+        if (!IS_MULTI_TENANT) {
+          const lastProject = await getLastProject()
+          if (lastProject) {
+            try {
+              const proj = await openProject(lastProject.path)
+              await handleProjectOpened(proj)
+            } catch {
+              // Last project no longer valid
+            }
           }
         }
       } catch {
@@ -406,6 +421,47 @@ function App() {
     setSelectedFile(null)
   }
 
+  if (IS_MULTI_TENANT) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/select-dept"
+            element={
+              <AuthGuard>
+                <DeptSelectPage />
+              </AuthGuard>
+            }
+          />
+          <Route
+            path="/d/:deptId/*"
+            element={
+              <AuthGuard requireDept>
+                <DeptApp />
+              </AuthGuard>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminGuard>
+                <AdminLayout />
+              </AdminGuard>
+            }
+          >
+            <Route index element={<AdminUsersPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="orgs" element={<AdminOrgsPage />} />
+            <Route path="orgs/:orgId" element={<AdminOrgDetailPage />} />
+          </Route>
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
+      </BrowserRouter>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
@@ -440,6 +496,49 @@ function App() {
         onCreated={handleProjectOpened}
       />
     </>
+  )
+}
+
+// DeptApp: reads deptId from URL, syncs org-store, maps to wiki-store project, renders AppLayout.
+// Must be defined outside App (hooks rules prohibit defining components inside another component).
+function DeptApp() {
+  const { deptId } = useParams<{ deptId: string }>()
+  const navigate = useNavigate()
+  const activeDeptId = useOrgStore((s) => s.activeDeptId)
+  const activeDept = useOrgStore((s) => s.activeDept)
+  const setActiveDeptId = useOrgStore((s) => s.setActiveDeptId)
+  const setProject = useWikiStore((s) => s.setProject)
+
+  useEffect(() => {
+    if (deptId && deptId !== activeDeptId) {
+      setActiveDeptId(deptId)
+    }
+  }, [deptId, activeDeptId, setActiveDeptId])
+
+  useEffect(() => {
+    if (activeDept) {
+      setProject({
+        id: activeDept.id,
+        name: activeDept.name,
+        path: activeDept.wikiProjectPath,
+      })
+    }
+  }, [activeDept, setProject])
+
+  if (!activeDept) {
+    return <div className="flex items-center justify-center h-screen">加载中...</div>
+  }
+
+  const handleDeptSettings = () => {
+    if (deptId) navigate(`/d/${deptId}/settings`)
+  }
+
+  return (
+    <AppLayout
+      onSwitchProject={() => { /* no-op in multi-tenant mode */ }}
+      deptId={deptId}
+      onDeptSettings={handleDeptSettings}
+    />
   )
 }
 

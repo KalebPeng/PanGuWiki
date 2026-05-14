@@ -1,5 +1,5 @@
 import {
-  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe,
+  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe, Building2,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -23,9 +23,11 @@ const NAV_ITEMS: { view: NavView; icon: typeof FileText; labelKey: string }[] = 
 
 interface IconSidebarProps {
   onSwitchProject: () => void
+  deptId?: string
+  onDeptSettings?: () => void
 }
 
-export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
+export function IconSidebar({ onSwitchProject, deptId, onDeptSettings }: IconSidebarProps) {
   const { t } = useTranslation()
   const activeView = useWikiStore((s) => s.activeView)
   const setActiveView = useWikiStore((s) => s.setActiveView)
@@ -106,6 +108,17 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
               {t("nav.settings")}
             </TooltipContent>
           </Tooltip>
+          {deptId && onDeptSettings && (
+            <Tooltip>
+              <TooltipTrigger
+                onClick={onDeptSettings}
+                className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground"
+              >
+                <Building2 className="h-5 w-5" />
+              </TooltipTrigger>
+              <TooltipContent side="right">部门设置</TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger
               onClick={onSwitchProject}

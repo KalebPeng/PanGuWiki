@@ -14,9 +14,11 @@ import { ErrorBoundary } from "@/components/error-boundary"
 
 interface AppLayoutProps {
   onSwitchProject: () => void
+  deptId?: string
+  onDeptSettings?: () => void
 }
 
-export function AppLayout({ onSwitchProject }: AppLayoutProps) {
+export function AppLayout({ onSwitchProject, deptId, onDeptSettings }: AppLayoutProps) {
   const project = useWikiStore((s) => s.project)
   const selectedFile = useWikiStore((s) => s.selectedFile)
   const activeView = useWikiStore((s) => s.activeView)
@@ -99,7 +101,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
     <div className="flex h-screen flex-col bg-background text-foreground">
       <UpdateBanner />
       <div className="flex min-h-0 flex-1">
-        <IconSidebar onSwitchProject={onSwitchProject} />
+        <IconSidebar onSwitchProject={onSwitchProject} deptId={deptId} onDeptSettings={onDeptSettings} />
         <div ref={containerRef} className="flex min-w-0 flex-1 overflow-hidden">
         {!isSettings && (
           <>

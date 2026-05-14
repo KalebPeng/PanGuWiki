@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { httpGet, httpPost } from './dotnet-client'
 
+const BASE_URL = import.meta.env.VITE_DOTNET_URL ?? 'http://localhost:5200'
+
 describe('dotnet-client', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
@@ -11,7 +13,7 @@ describe('dotnet-client', () => {
       new Response(JSON.stringify({ ok: true }), { status: 200 })
     )
     const result = await httpGet<{ ok: boolean }>('/health')
-    expect(fetch).toHaveBeenCalledWith('http://localhost:5200/health')
+    expect(fetch).toHaveBeenCalledWith(`${BASE_URL}/health`)
     expect(result).toEqual({ ok: true })
   })
 
@@ -21,7 +23,7 @@ describe('dotnet-client', () => {
     )
     await httpPost('/api/project/create', { name: 'test', path: '/tmp' })
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:5200/api/project/create',
+      `${BASE_URL}/api/project/create`,
       expect.objectContaining({ method: 'POST', body: '{"name":"test","path":"/tmp"}' })
     )
   })

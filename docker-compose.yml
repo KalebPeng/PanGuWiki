@@ -23,10 +23,15 @@ services:
       LlmWikiCloud__Projects__proj_123: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}/PanGu-Wiki"
       Qdrant__Host: "qdrant"
       Qdrant__Port: "6334"
+      ConnectionStrings__Default: "Host=postgres;Database=llmwiki;Username=llmwiki;Password=${POSTGRES_PASSWORD:-changeme}"
+      Jwt__Secret: "${JWT_SECRET:-CHANGEME-minimum-32-character-dev-secret!!}"
+      Jwt__Issuer: "llmwiki"
+      Jwt__Audience: "llmwiki"
     volumes:
       - "${WIKI_ROOT_PATH:-./data/wiki}:${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
     depends_on:
       - qdrant
+      - postgres
     expose:
       - "5200"
 
@@ -38,5 +43,17 @@ services:
       - "6333"
       - "6334"
 
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: llmwiki
+      POSTGRES_USER: llmwiki
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-changeme}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
 volumes:
   qdrant_storage:
+  pgdata:

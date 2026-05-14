@@ -125,6 +125,118 @@ public class CloudWikiService(Microsoft.Extensions.Options.IOptions<CloudWikiOpt
         return Task.FromResult(string.Join("\n\n---\n\n", sections));
     }
 
+    // ── *ByPath overloads ─────────────────────────────────────────────────────
+    // These methods accept a projectPath directly, bypassing the projectId →
+    // configured-path lookup in ResolveProjectRoot. All file-system logic is
+    // delegated to the same private helpers used by the original methods.
+
+    public Task<IReadOnlyList<CloudWikiPage>> ListPagesByPath(string projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("projectPath cannot be empty.", nameof(projectPath));
+
+        var projectRoot = Path.GetFullPath(projectPath);
+        var pages = EnumerateMarkdownPages(projectRoot)
+            .Select(path =>
+            {
+                var content = File.ReadAllText(path);
+                return new CloudWikiPage(
+                    ExtractTitle(content, Path.GetFileName(path)),
+                    ToProjectRelative(projectRoot, path));
+            })
+            .OrderBy(p => p.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<CloudWikiPage>>(pages);
+    }
+
+    public Task<IReadOnlyList<CloudWikiSearchResult>> SearchByPath(
+        string projectPath, string query, int? limit = null)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("projectPath cannot be empty.", nameof(projectPath));
+        if (string.IsNullOrWhiteSpace(query))
+            throw new InvalidOperationException("Search query cannot be empty.");
+
+        var projectRoot = Path.GetFullPath(projectPath);
+        var trimmedQuery = query.Trim();
+        var queryLower = trimmedQuery.ToLowerInvariant();
+        var tokens = Tokenize(trimmedQuery);
+        var clampedLimit = Math.Clamp(limit ?? DefaultLimit, 1, 50);
+
+        var results = EnumerateMarkdownPages(projectRoot)
+            .Select(path =>
+            {
+                var content = File.ReadAllText(path);
+                var title = ExtractTitle(content, Path.GetFileName(path));
+                return ScorePage(projectRoot, path, title, content, trimmedQuery, queryLower, tokens);
+            })
+            .Where(r => r is not null)
+            .Cast<CloudWikiSearchResult>()
+            .OrderByDescending(r => r.Score)
+            .ThenBy(r => r.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Take(clampedLimit)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<CloudWikiSearchResult>>(results);
+    }
+
+    public Task<CloudWikiPage?> ReadPageByPath(string projectPath, string pathOrTitle)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("projectPath cannot be empty.", nameof(projectPath));
+        if (string.IsNullOrWhiteSpace(pathOrTitle))
+            throw new InvalidOperationException("Page path or title cannot be empty.");
+
+        var projectRoot = Path.GetFullPath(projectPath);
+        var wikiRoot = Path.Combine(projectRoot, "wiki");
+        var input = pathOrTitle.Trim();
+
+        var pathCandidate = ResolvePathCandidate(projectRoot, input);
+        if (pathCandidate is not null)
+        {
+            EnsureInside(wikiRoot, pathCandidate, "Path is outside wiki directory.");
+            if (!File.Exists(pathCandidate))
+                return Task.FromResult<CloudWikiPage?>(null);
+            return Task.FromResult<CloudWikiPage?>(LoadPage(projectRoot, pathCandidate));
+        }
+
+        var inputLower = input.ToLowerInvariant();
+        foreach (var path in EnumerateMarkdownPages(projectRoot))
+        {
+            var content = File.ReadAllText(path);
+            var title = ExtractTitle(content, Path.GetFileName(path));
+            var relative = ToProjectRelative(projectRoot, path);
+            if (
+                string.Equals(title, input, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(relative), input, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(relative, input.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase) ||
+                title.ToLowerInvariant().Contains(inputLower))
+            {
+                return Task.FromResult<CloudWikiPage?>(new CloudWikiPage(title, relative, content));
+            }
+        }
+
+        return Task.FromResult<CloudWikiPage?>(null);
+    }
+
+    public Task<string> GetOverviewByPath(string projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("projectPath cannot be empty.", nameof(projectPath));
+
+        var projectRoot = Path.GetFullPath(projectPath);
+        var sections = new List<string>();
+        foreach (var relative in new[] { "purpose.md", "wiki/overview.md", "wiki/index.md" })
+        {
+            var path = Path.Combine(projectRoot, relative);
+            EnsureInside(projectRoot, path, "Overview path is outside project.");
+            if (!File.Exists(path)) continue;
+            sections.Add($"# {relative}\n\n{File.ReadAllText(path).Trim()}");
+        }
+        return Task.FromResult(string.Join("\n\n---\n\n", sections));
+    }
+
     public bool IsAuthorized(string? authorizationHeader)
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey)) return false;

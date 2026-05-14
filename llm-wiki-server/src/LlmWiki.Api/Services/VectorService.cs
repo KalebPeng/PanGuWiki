@@ -28,6 +28,10 @@ public class VectorService
         return $"llmwiki_{hash:x8}";
     }
 
+    private static string CollectionName(Guid deptId, string projectPath) =>
+        CollectionName($"{deptId:N}:{projectPath}");
+    // Uses :N format (32-char lowercase hex without hyphens) for stable hash input.
+
     private async Task EnsureCollection(string projectPath, uint dim)
     {
         var name = CollectionName(projectPath);
@@ -110,6 +114,87 @@ public class VectorService
         var existing = await _client.ListCollectionsAsync();
         if (existing.Any(c => c == name))
             await _client.DeleteCollectionAsync(name);
+    }
+
+    // ── Dept-scoped overloads (Phase 3) ──────────────────────────────────────
+
+    public async Task UpsertChunks(Guid deptId, string projectPath, string pageId, ChunkUpsertInput[] chunks)
+    {
+        if (chunks.Length == 0) return;
+        ValidatePageId(pageId);
+        var dim = (uint)chunks[0].Embedding.Length;
+        var collName = CollectionName(deptId, projectPath);
+        var existing = await _client.ListCollectionsAsync();
+        if (!existing.Any(c => c == collName))
+            await _client.CreateCollectionAsync(collName, new VectorParams { Size = dim, Distance = Distance.Cosine });
+
+        // Delete existing chunks for this page first
+        await _client.DeleteAsync(collName, Conditions.MatchKeyword("page_id", pageId));
+
+        var points = chunks.Select(c => new PointStruct
+        {
+            Id = Guid.NewGuid(),
+            Vectors = c.Embedding,
+            Payload =
+            {
+                ["chunk_id"] = $"{pageId}#{c.ChunkIndex}",
+                ["page_id"] = pageId,
+                ["chunk_index"] = (long)c.ChunkIndex,
+                ["chunk_text"] = c.ChunkText,
+                ["heading_path"] = c.HeadingPath,
+            }
+        }).ToList();
+
+        await _client.UpsertAsync(collName, points);
+    }
+
+    public async Task<IReadOnlyList<ChunkSearchResult>> SearchChunks(
+        Guid deptId, string projectPath, float[] queryEmbedding, int topK = 5)
+    {
+        var collName = CollectionName(deptId, projectPath);
+        var existing = await _client.ListCollectionsAsync();
+        if (!existing.Any(c => c == collName)) return [];
+
+        var results = await _client.SearchAsync(
+            collName,
+            queryEmbedding,
+            limit: (ulong)topK,
+            payloadSelector: true);
+
+        return results.Select(r => new ChunkSearchResult(
+            r.Payload["chunk_id"].StringValue,
+            r.Payload["page_id"].StringValue,
+            (uint)r.Payload["chunk_index"].IntegerValue,
+            r.Payload["chunk_text"].StringValue,
+            r.Payload["heading_path"].StringValue,
+            1f / (1f + (1f - r.Score))
+        )).ToList();
+    }
+
+    public async Task DeletePage(Guid deptId, string projectPath, string pageId)
+    {
+        ValidatePageId(pageId);
+        var collName = CollectionName(deptId, projectPath);
+        var existing = await _client.ListCollectionsAsync();
+        if (!existing.Any(c => c == collName)) return;
+        await _client.DeleteAsync(collName, Conditions.MatchKeyword("page_id", pageId));
+    }
+
+    public async Task<ulong> CountChunks(Guid deptId, string projectPath)
+    {
+        var collName = CollectionName(deptId, projectPath);
+        var existing = await _client.ListCollectionsAsync();
+        if (!existing.Any(c => c == collName)) return 0;
+        var info = await _client.GetCollectionInfoAsync(collName);
+        return info.PointsCount;
+    }
+
+    public async Task DropCollection(Guid deptId, string projectPath)
+    {
+        var collName = CollectionName(deptId, projectPath);
+        var existing = await _client.ListCollectionsAsync();
+        if (existing.Any(c => c == collName))
+            await _client.DeleteCollectionAsync(collName);
     }
 
     // Legacy v1 stubs — no-ops for frontend compatibility
