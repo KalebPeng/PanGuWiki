@@ -88,6 +88,13 @@ builder.Services.AddScoped<ClaudeWebSocket>();
 
 var app = builder.Build();
 
+// 启动时自动执行 EF Core 迁移（Docker 部署时确保数据库表最新）
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();

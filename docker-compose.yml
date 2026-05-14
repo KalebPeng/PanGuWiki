@@ -6,6 +6,7 @@ services:
       args:
         VITE_DOTNET_URL: ""
         VITE_WIKI_PARENT_DIR: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
+        VITE_MULTI_TENANT: "${VITE_MULTI_TENANT:-true}"
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
@@ -30,8 +31,10 @@ services:
     volumes:
       - "${WIKI_ROOT_PATH:-./data/wiki}:${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
     depends_on:
-      - qdrant
-      - postgres
+      qdrant:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     expose:
       - "5200"
 
@@ -53,6 +56,11 @@ services:
       - pgdata:/var/lib/postgresql/data
     expose:
       - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llmwiki -d llmwiki"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   qdrant_storage:
