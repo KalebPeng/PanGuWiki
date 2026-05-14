@@ -28,6 +28,9 @@ services:
       Jwt__Secret: "${JWT_SECRET:-CHANGEME-minimum-32-character-dev-secret!!}"
       Jwt__Issuer: "llmwiki"
       Jwt__Audience: "llmwiki"
+      InitialAdmin__Email: "${INITIAL_ADMIN_EMAIL:-}"
+      InitialAdmin__Password: "${INITIAL_ADMIN_PASSWORD:-}"
+      InitialAdmin__DisplayName: "${INITIAL_ADMIN_NAME:-Admin}"
     volumes:
       - "${WIKI_ROOT_PATH:-./data/wiki}:${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
     depends_on:

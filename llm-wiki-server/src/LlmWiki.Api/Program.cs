@@ -93,6 +93,34 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
+
+    // 若数据库中尚无超级管理员，且配置了 INITIAL_ADMIN_EMAIL / INITIAL_ADMIN_PASSWORD
+    // 则自动创建初始超管账号（仅在第一次部署时生效）
+    var adminEmail = builder.Configuration["InitialAdmin:Email"];
+    var adminPassword = builder.Configuration["InitialAdmin:Password"];
+    var adminName = builder.Configuration["InitialAdmin:DisplayName"] ?? "Admin";
+
+    if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
+    {
+        var hasSuperAdmin = db.Users.Any(u => u.IsSuperAdmin);
+        if (!hasSuperAdmin)
+        {
+            var passwordService = scope.ServiceProvider.GetRequiredService<PasswordService>();
+            db.Users.Add(new LlmWiki.Api.Modules.Identity.Entities.AppUser
+            {
+                Id = Guid.NewGuid(),
+                Email = adminEmail.ToLowerInvariant().Trim(),
+                DisplayName = adminName,
+                PasswordHash = passwordService.Hash(adminPassword),
+                IsActive = true,
+                IsSuperAdmin = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            db.SaveChanges();
+            Console.WriteLine($"[Seed] 初始超管账号已创建：{adminEmail}");
+        }
+    }
 }
 
 app.UseCors();
