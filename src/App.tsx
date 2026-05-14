@@ -527,7 +527,11 @@ function DeptApp() {
         const proj = { id: dept.id, name: dept.name, path: dept.wiki_project_path }
         setProject(proj)
 
-        // 3. 初始化 ingest / dedup 队列（与单机 handleProjectOpened 保持一致）
+        // 3. 注册到 project registry，使 ingest-queue 能通过 UUID 找到路径
+        const { upsertProjectInfo } = await import("@/lib/project-identity")
+        await upsertProjectInfo(proj.id, proj.path, proj.name)
+
+        // 4. 初始化 ingest / dedup 队列（与单机 handleProjectOpened 保持一致）
         import("@/lib/ingest-queue").then(({ restoreQueue }) =>
           restoreQueue(proj.id, proj.path).catch(() => {})
         )
