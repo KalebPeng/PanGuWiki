@@ -38,6 +38,7 @@ export function AdminOrgDetailPage() {
   const [showDeptForm, setShowDeptForm] = useState(false)
   const [deptName, setDeptName] = useState('')
   const [deptSlug, setDeptSlug] = useState('')
+  const [deptPath, setDeptPath] = useState('')
   const [creating, setCreating] = useState(false)
   const [deptFormError, setDeptFormError] = useState<string | null>(null)
 
@@ -92,9 +93,11 @@ export function AdminOrgDetailPage() {
     setDeptFormError(null)
     try {
       await httpPost(`/api/admin/orgs/${orgId}/departments`, {
-        name: deptName, slug: deptSlug
+        name: deptName,
+        slug: deptSlug,
+        wiki_project_path: deptPath || undefined,
       })
-      setDeptName(''); setDeptSlug(''); setShowDeptForm(false)
+      setDeptName(''); setDeptSlug(''); setDeptPath(''); setShowDeptForm(false)
       loadDepts()
     } catch (e) {
       setDeptFormError(e instanceof Error ? e.message : '创建失败')
@@ -167,7 +170,7 @@ export function AdminOrgDetailPage() {
       {showDeptForm && (
         <form onSubmit={handleCreateDept} className="mb-6 rounded-xl border border-border bg-card p-5 space-y-4">
           <h2 className="text-sm font-semibold">新建部门</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-xs text-muted-foreground">部门名称</label>
               <input value={deptName} onChange={e => setDeptName(e.target.value)} required
@@ -178,6 +181,15 @@ export function AdminOrgDetailPage() {
               <input value={deptSlug} onChange={e => setDeptSlug(e.target.value)} required
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
             </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Wiki 路径
+              <span className="ml-1 text-muted-foreground/60">（可选，留空则使用服务器默认路径）</span>
+            </label>
+            <input value={deptPath} onChange={e => setDeptPath(e.target.value)}
+              placeholder="留空自动生成，本地开发可填 C:\Project\wiki\部门名"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
           </div>
           {deptFormError && <p className="text-xs text-destructive">{deptFormError}</p>}
           <div className="flex gap-2">

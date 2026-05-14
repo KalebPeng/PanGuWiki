@@ -36,8 +36,8 @@ public class AdminController(
         Guid Id, Guid OrgId, string Name, string Slug,
         string WikiProjectPath, int MemberCount, DateTime CreatedAt);
 
-    // wiki_project_path 由服务端根据 WikiProjects:RootPath 自动生成，不需要前端传入
-    public record CreateDeptRequest(string Name, string Slug);
+    // wiki_project_path 可选：留空则基于 WikiProjects:RootPath 自动生成
+    public record CreateDeptRequest(string Name, string Slug, string? WikiProjectPath);
 
     public record AdminMemberResponse(
         Guid Id, Guid UserId, string Email, string DisplayName, string Role, DateTime JoinedAt);
@@ -180,9 +180,20 @@ public class AdminController(
         if (await db.Departments.AnyAsync(d => d.OrgId == orgId && d.Slug == slugLower))
             return Conflict(new ErrorResponse("Slug already used in this organization"));
 
-        // 路径自动生成：WikiProjects:RootPath / 部门名称
-        var rootPath = wikiOptions.Value.RootPath ?? "/data/wiki";
-        var project = projectService.CreateProject(request.Name, rootPath);
+        // 路径：前端填了则用前端的，否则基于 WikiProjects:RootPath 自动生成
+        var rootPath = string.IsNullOrWhiteSpace(request.WikiProjectPath)
+            ? (wikiOptions.Value.RootPath ?? "/data/wiki")
+            : request.WikiProjectPath;
+
+        LlmWiki.Api.Models.WikiProject project;
+        try
+        {
+            project = projectService.CreateProject(request.Name, rootPath);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ErrorResponse($"无法创建 Wiki 目录：{ex.Message}。请检查路径是否正确，或手动填写可访问的路径。"));
+        }
 
         var dept = new Department
         {
