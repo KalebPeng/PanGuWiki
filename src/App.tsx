@@ -524,9 +524,18 @@ function DeptApp() {
         if (cancelled) return
 
         // 2. 设置项目
-        setProject({ id: dept.id, name: dept.name, path: dept.wiki_project_path })
+        const proj = { id: dept.id, name: dept.name, path: dept.wiki_project_path }
+        setProject(proj)
 
-        // 3. 加载文件树
+        // 3. 初始化 ingest / dedup 队列（与单机 handleProjectOpened 保持一致）
+        import("@/lib/ingest-queue").then(({ restoreQueue }) =>
+          restoreQueue(proj.id, proj.path).catch(() => {})
+        )
+        import("@/lib/dedup-queue").then(({ restoreQueue }) =>
+          restoreQueue(proj.id, proj.path).catch(() => {})
+        )
+
+        // 4. 加载文件树
         const { listDirectory } = await import("@/commands/fs")
         const tree = await listDirectory(dept.wiki_project_path)
         if (!cancelled) {
