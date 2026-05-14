@@ -84,6 +84,19 @@ public class DeptController(AppDbContext db, ICurrentUser currentUser, ProjectSe
             new DeptResponse(dept.Id, dept.OrgId, dept.Name, dept.Slug, dept.WikiProjectPath, dept.CreatedAt));
     }
 
+    // ── GET /api/departments/{deptId} ────────────────────────────────────────
+
+    [HttpGet("api/departments/{deptId:guid}")]
+    [RequireDeptRole]
+    public async Task<IActionResult> GetDepartment(Guid deptId)
+    {
+        var dept = await db.Departments.FindAsync(deptId);
+        if (dept is null)
+            return NotFound();
+
+        return Ok(new DeptResponse(dept.Id, dept.OrgId, dept.Name, dept.Slug, dept.WikiProjectPath, dept.CreatedAt));
+    }
+
     // ── PUT /api/departments/{deptId} ────────────────────────────────────────
 
     [HttpPut("api/departments/{deptId:guid}")]

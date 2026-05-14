@@ -21,7 +21,7 @@ import { AdminLayout } from "@/pages/admin/AdminLayout"
 import { AdminUsersPage } from "@/pages/admin/AdminUsersPage"
 import { AdminOrgsPage } from "@/pages/admin/AdminOrgsPage"
 import { AdminOrgDetailPage } from "@/pages/admin/AdminOrgDetailPage"
-import { useOrgStore } from "@/stores/org-store"
+
 import type { WikiProject } from "@/types/wiki"
 import type { ProjectLlmSettings } from "@/lib/project-llm-settings"
 
@@ -499,34 +499,57 @@ function App() {
   )
 }
 
-// DeptApp: reads deptId from URL, syncs org-store, maps to wiki-store project, renders AppLayout.
+// DeptApp: reads deptId from URL, fetches dept info, loads file tree, renders AppLayout.
 // Must be defined outside App (hooks rules prohibit defining components inside another component).
 function DeptApp() {
   const { deptId } = useParams<{ deptId: string }>()
   const navigate = useNavigate()
-  const activeDeptId = useOrgStore((s) => s.activeDeptId)
-  const activeDept = useOrgStore((s) => s.activeDept)
-  const setActiveDeptId = useOrgStore((s) => s.setActiveDeptId)
   const setProject = useWikiStore((s) => s.setProject)
+  const setFileTree = useWikiStore((s) => s.setFileTree)
+  const [ready, setReady] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (deptId && deptId !== activeDeptId) {
-      setActiveDeptId(deptId)
-    }
-  }, [deptId, activeDeptId, setActiveDeptId])
+    if (!deptId) return
+    let cancelled = false
 
-  useEffect(() => {
-    if (activeDept) {
-      setProject({
-        id: activeDept.id,
-        name: activeDept.name,
-        path: activeDept.wikiProjectPath,
-      })
-    }
-  }, [activeDept, setProject])
+    async function loadDept() {
+      try {
+        // 1. 从后端获取部门信息（含真实 wiki 路径）
+        const { httpGet } = await import("@/api/dotnet-client")
+        const dept = await httpGet<{
+          id: string; name: string; wiki_project_path: string
+        }>(`/api/departments/${deptId}`)
 
-  if (!activeDept) {
-    return <div className="flex items-center justify-center h-screen">加载中...</div>
+        if (cancelled) return
+
+        // 2. 设置项目
+        setProject({ id: dept.id, name: dept.name, path: dept.wiki_project_path })
+
+        // 3. 加载文件树
+        const { listDirectory } = await import("@/commands/fs")
+        const tree = await listDirectory(dept.wiki_project_path)
+        if (!cancelled) {
+          setFileTree(tree)
+          setReady(true)
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败')
+      }
+    }
+
+    setReady(false)
+    setError(null)
+    loadDept()
+    return () => { cancelled = true }
+  }, [deptId, setProject, setFileTree])
+
+  if (error) {
+    return <div className="flex items-center justify-center h-screen text-destructive">{error}</div>
+  }
+
+  if (!ready) {
+    return <div className="flex items-center justify-center h-screen text-muted-foreground">加载中...</div>
   }
 
   const handleDeptSettings = () => {
