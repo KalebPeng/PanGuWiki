@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
@@ -14,6 +14,7 @@ import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
 import { AuthGuard } from "@/components/auth/AuthGuard"
 import { AdminGuard } from "@/components/auth/AdminGuard"
+import { useAuthStore } from "@/stores/auth-store"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { DeptSelectPage } from "@/pages/DeptSelectPage"
@@ -313,7 +314,7 @@ function App() {
             <Route path="orgs" element={<AdminOrgsPage />} />
             <Route path="orgs/:orgId" element={<AdminOrgDetailPage />} />
           </Route>
-          <Route path="*" element={<LoginPage />} />
+          <Route path="*" element={<RootRedirect />} />
         </Routes>
       </BrowserRouter>
     )
@@ -354,6 +355,18 @@ function App() {
       />
     </>
   )
+}
+
+// 根路由重定向：已登录 → 部门选择，未登录 → 登录页
+function RootRedirect() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const hasHydrated = useAuthStore((s) => s.hasHydrated)
+
+  if (!hasHydrated) return null  // 等待 store 从 localStorage 恢复
+
+  return isAuthenticated
+    ? <Navigate to="/select-dept" replace />
+    : <Navigate to="/login" replace />
 }
 
 // DeptApp: reads deptId from URL, fetches dept info, loads file tree, renders AppLayout.

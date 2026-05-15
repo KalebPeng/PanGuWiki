@@ -76,6 +76,18 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
         return Task.CompletedTask;
     }
 
+    // 供 FileController.Preview 使用的公开路径校验
+    public void EnsureSafeRead(string path) => EnsurePathWithinWikiProject(path);
+
+    public void MoveFile(string source, string destination)
+    {
+        EnsurePathWithinWikiProject(source);
+        EnsurePathWithinWikiProject(destination, allowNonExistent: true);
+        var destDir = Path.GetDirectoryName(destination)!;
+        if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
+        File.Move(source, destination, overwrite: false);
+    }
+
     public Task CopyFile(string source, string destination)
     {
         EnsureExistingFileSystemEntry(source);

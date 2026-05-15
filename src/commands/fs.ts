@@ -16,6 +16,10 @@ export async function listDirectory(path: string): Promise<FileNode[]> {
   return httpGet<FileNode[]>(`/api/file/list?path=${enc(path)}`)
 }
 
+export async function moveFile(source: string, destination: string): Promise<void> {
+  return httpPost<void>('/api/file/move', { source, destination })
+}
+
 export async function copyFile(source: string, destination: string): Promise<void> {
   return httpPost<void>('/api/file/copy', { source, destination })
 }

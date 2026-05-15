@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, Upload } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
-import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles } from "@/commands/fs"
+import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile } from "@/commands/fs"
+import { openFilePreview } from "@/api/dotnet-client"
 import type { FileNode } from "@/types/wiki"
 import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
@@ -31,7 +32,6 @@ export function SourcesView() {
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
-  const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   /**
@@ -46,6 +46,9 @@ export function SourcesView() {
    *      anchored here is the right scope.
    */
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null)
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState("")
+  const newFolderInputRef = useRef<HTMLInputElement>(null)
 
   // Auto-disarm: 5 seconds without a second click resets the
   // pending state. Prevents a stale armed button from firing if
@@ -73,6 +76,31 @@ export function SourcesView() {
   useEffect(() => {
     loadSources()
   }, [loadSources])
+
+  async function handleCreateFolder() {
+    const name = newFolderName.trim()
+    if (!name || !project) return
+    const pp = normalizePath(project.path)
+    try {
+      await createDirectory(`${pp}/raw/sources/${name}`)
+      setCreatingFolder(false)
+      setNewFolderName("")
+      await loadSources()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '创建文件夹失败')
+    }
+  }
+
+  async function handleMoveFile(srcPath: string, destFolderPath: string) {
+    const fileName = srcPath.split('/').pop()!
+    const destPath = `${destFolderPath}/${fileName}`
+    try {
+      await moveFile(srcPath, destPath)
+      await loadSources()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '移动文件失败')
+    }
+  }
 
   function handleImport() {
     fileInputRef.current?.click()
@@ -109,41 +137,7 @@ export function SourcesView() {
     }
   }
 
-  async function handleDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setIsDragOver(false)
-    const items = Array.from(e.dataTransfer.items)
-    const collected: { blob: File; relativePath: string }[] = []
-    await Promise.all(
-      items.map((item) => {
-        const entry = item.webkitGetAsEntry()
-        if (!entry) return
-        return collectFromEntry(entry, "", collected)
-      }),
-    )
-    await processUploadedFiles(collected)
-  }
 
-  async function collectFromEntry(
-    entry: FileSystemEntry,
-    prefix: string,
-    out: { blob: File; relativePath: string }[],
-  ): Promise<void> {
-    if (entry.isFile) {
-      const file = await new Promise<File>((res, rej) =>
-        (entry as FileSystemFileEntry).file(res, rej),
-      )
-      out.push({ blob: file, relativePath: prefix ? `${prefix}/${entry.name}` : entry.name })
-    } else if (entry.isDirectory) {
-      const reader = (entry as FileSystemDirectoryEntry).createReader()
-      const entries = await readAllEntries(reader)
-      await Promise.all(
-        entries.map((e) =>
-          collectFromEntry(e, prefix ? `${prefix}/${entry.name}` : entry.name, out),
-        ),
-      )
-    }
-  }
 
   async function handleOpenSource(node: FileNode) {
     setSelectedFile(node.path)
@@ -372,13 +366,7 @@ export function SourcesView() {
   }
 
   return (
-    <div
-      className="relative flex h-full flex-col"
-      onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true) }}
-      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false) }}
-      onDrop={handleDrop}
-    >
+    <div className="relative flex h-full flex-col">
       <input
         ref={fileInputRef}
         type="file"
@@ -407,27 +395,48 @@ export function SourcesView() {
           )
         }
       />
-      {isDragOver && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary bg-background/90 text-primary">
-          <Upload className="h-10 w-10" />
-          <p className="text-sm font-medium">松开以上传文件</p>
+      <div className="flex flex-col border-b">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="icon" onClick={loadSources} title="刷新">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" title="新建文件夹"
+              onClick={() => {
+                setCreatingFolder(true)
+                setTimeout(() => newFolderInputRef.current?.focus(), 50)
+              }}>
+              <FolderPlus className="h-4 w-4" />
+            </Button>
+            <Button size="sm" onClick={handleImport} disabled={importing}>
+              <Plus className="mr-1 h-4 w-4" />
+              {importing ? t("sources.importing") : t("sources.import")}
+            </Button>
+            <Button size="sm" onClick={handleImportFolder} disabled={importing}>
+              <Plus className="mr-1 h-4 w-4" />
+              {t("sources.importFolder", "文件夹")}
+            </Button>
+          </div>
         </div>
-      )}
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={loadSources} title="刷新">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Button size="sm" onClick={handleImport} disabled={importing}>
-            <Plus className="mr-1 h-4 w-4" />
-            {importing ? t("sources.importing") : t("sources.import")}
-          </Button>
-          <Button size="sm" onClick={handleImportFolder} disabled={importing}>
-            <Plus className="mr-1 h-4 w-4" />
-            {t("sources.importFolder", "文件夹")}
-          </Button>
-        </div>
+        {creatingFolder && (
+          <div className="flex items-center gap-2 px-4 pb-3">
+            <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+            <input
+              ref={newFolderInputRef}
+              value={newFolderName}
+              onChange={e => setNewFolderName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleCreateFolder()
+                if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName("") }
+              }}
+              placeholder="文件夹名称..."
+              className="flex-1 rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <Button size="sm" onClick={handleCreateFolder}>确认</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setCreatingFolder(false); setNewFolderName("") }}>取消</Button>
+          </div>
+        )}
       </div>
 
       <ScrollArea className="flex-1">
@@ -454,6 +463,7 @@ export function SourcesView() {
               onIngest={handleIngest}
               onDelete={handleDelete}
               onDeleteFolder={handleDeleteFolder}
+              onMoveFile={handleMoveFile}
               pendingDeletePath={pendingDeletePath}
               setPendingDeletePath={setPendingDeletePath}
               ingestingPath={ingestingPath}
@@ -471,20 +481,16 @@ export function SourcesView() {
 }
 
 
-function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
-  return new Promise((res, rej) => reader.readEntries(res, rej))
-}
-
 function filterTree(nodes: FileNode[]): FileNode[] {
   return nodes
     .filter((n) => !n.name.startsWith("."))
     .map((n) => {
-      if (n.is_dir && n.children) {
-        return { ...n, children: filterTree(n.children) }
+      if (n.is_dir) {
+        // 确保 children 始终是数组（后端空目录可能返回 null/undefined）
+        return { ...n, children: filterTree(n.children ?? []) }
       }
       return n
     })
-    .filter((n) => !n.is_dir || (n.children && n.children.length > 0))
 }
 
 function countFiles(nodes: FileNode[]): number {
@@ -506,6 +512,7 @@ function SourceTree({
   onIngest,
   onDelete,
   onDeleteFolder,
+  onMoveFile,
   pendingDeletePath,
   setPendingDeletePath,
   ingestingPath,
@@ -516,6 +523,7 @@ function SourceTree({
   onIngest: (node: FileNode) => void
   onDelete: (node: FileNode) => void
   onDeleteFolder: (node: FileNode) => void
+  onMoveFile: (srcPath: string, destFolderPath: string) => void
   /** Path of the node currently in "click again to confirm" state.
    *  Lifted to the parent so only ONE button is armed at a time
    *  across the whole tree — clicking another delete arms that one
@@ -526,6 +534,7 @@ function SourceTree({
   depth: number
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null)
 
   const toggle = (path: string) => {
     setCollapsed((prev) => ({ ...prev, [path]: !prev[path] }))
@@ -565,13 +574,23 @@ function SourceTree({
     <>
       {sorted.map((node) => {
         const isPendingDelete = pendingDeletePath === node.path
-        if (node.is_dir && node.children) {
+        if (node.is_dir) {
+          const children = node.children ?? []
           const isCollapsed = collapsed[node.path] ?? false
+          const isDragOver = dragOverPath === node.path
           return (
             <div key={node.path}>
               <div
-                className="group flex w-full items-center gap-1 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                className={`group flex w-full items-center gap-1 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors ${isDragOver ? 'bg-accent/60 ring-1 ring-primary' : ''}`}
                 style={{ paddingLeft: `${depth * 16 + 4}px` }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverPath(node.path) }}
+                onDragLeave={(e) => { e.stopPropagation(); setDragOverPath(null) }}
+                onDrop={(e) => {
+                  e.preventDefault(); e.stopPropagation()
+                  const src = e.dataTransfer.getData('text/plain')
+                  if (src && src !== node.path) onMoveFile(src, node.path)
+                  setDragOverPath(null)
+                }}
               >
                 <button
                   onClick={() => toggle(node.path)}
@@ -585,7 +604,7 @@ function SourceTree({
                   <Folder className="h-4 w-4 shrink-0 text-amber-500" />
                   <span className="truncate font-medium">{node.name}</span>
                   <span className="ml-auto text-[10px] text-muted-foreground/60 shrink-0">
-                    {countFiles(node.children)}
+                    {countFiles(children)}
                   </span>
                 </button>
                 <DeleteButton
@@ -600,11 +619,12 @@ function SourceTree({
               </div>
               {!isCollapsed && (
                 <SourceTree
-                  nodes={node.children}
+                  nodes={children}
                   onOpen={onOpen}
                   onIngest={onIngest}
                   onDelete={onDelete}
                   onDeleteFolder={onDeleteFolder}
+                  onMoveFile={onMoveFile}
                   pendingDeletePath={pendingDeletePath}
                   setPendingDeletePath={setPendingDeletePath}
                   ingestingPath={ingestingPath}
@@ -615,11 +635,22 @@ function SourceTree({
           )
         }
 
+        const previewExts = ['pdf', 'xlsx', 'xls', 'docx']
+        const ext = node.name.split('.').pop()?.toLowerCase() ?? ''
+        const canPreview = previewExts.includes(ext)
+
         return (
           <div
             key={node.path}
-            className="flex w-full items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', node.path)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            onDoubleClick={() => canPreview && openFilePreview(node.path)}
+            className={`flex w-full items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-grab active:cursor-grabbing ${canPreview ? 'group' : ''}`}
             style={{ paddingLeft: `${depth * 16 + 4}px` }}
+            title={canPreview ? '双击预览' : undefined}
           >
             <button
               onClick={() => onOpen(node)}

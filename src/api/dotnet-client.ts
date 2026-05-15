@@ -138,6 +138,13 @@ export async function httpPatch<T>(path: string, body?: unknown): Promise<T> {
   return parseBody<T>(res)
 }
 
+/** 在新标签页打开文件预览（PDF/Excel/Word → 后端渲染） */
+export function openFilePreview(filePath: string): void {
+  const token = localStorage.getItem('llmwiki:auth:token') ?? ''
+  const url = `${BASE_URL}/api/file/preview?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`
+  window.open(url, '_blank', 'noopener')
+}
+
 export async function httpUpload<T>(path: string, formData: FormData): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',

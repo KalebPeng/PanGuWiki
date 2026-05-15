@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, Navigate } from 'react-router-dom'
 import { httpPost } from '../api/dotnet-client'
 import { useAuthStore } from '../stores/auth-store'
 
@@ -12,6 +12,13 @@ interface LoginResponse {
 export function LoginPage() {
   const navigate = useNavigate()
   const setAuth = useAuthStore(s => s.setAuth)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hasHydrated = useAuthStore(s => s.hasHydrated)
+
+  // 已登录则直接跳到部门选择，不显示登录表单
+  if (hasHydrated && isAuthenticated) {
+    return <Navigate to="/select-dept" replace />
+  }
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
