@@ -10,7 +10,13 @@ interface AuthGuardProps {
 
 export function AuthGuard({ children, requireDept = false }: AuthGuardProps) {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hasHydrated = useAuthStore(s => s.hasHydrated)
   const activeDeptId = useOrgStore(s => s.activeDeptId)
+
+  // 等待 store 从 localStorage 水化完成，避免重开窗口时短暂跳转到登录页
+  if (!hasHydrated) {
+    return null
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />

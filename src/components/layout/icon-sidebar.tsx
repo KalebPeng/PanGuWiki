@@ -1,5 +1,5 @@
 import {
-  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe, Building2,
+  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe, Building2, LayoutDashboard,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -124,9 +124,14 @@ export function IconSidebar({ onSwitchProject, deptId, onDeptSettings }: IconSid
               onClick={onSwitchProject}
               className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground"
             >
-              <ArrowLeftRight className="h-5 w-5" />
+              {deptId
+                ? <LayoutDashboard className="h-5 w-5" />
+                : <ArrowLeftRight className="h-5 w-5" />
+              }
             </TooltipTrigger>
-            <TooltipContent side="right">{t("nav.switchProject")}</TooltipContent>
+            <TooltipContent side="right">
+              {deptId ? "返回控制台" : t("nav.switchProject")}
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>

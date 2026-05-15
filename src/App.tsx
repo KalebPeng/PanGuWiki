@@ -428,7 +428,7 @@ function DeptApp() {
 
   return (
     <AppLayout
-      onSwitchProject={() => { /* no-op in multi-tenant mode */ }}
+      onSwitchProject={() => navigate('/select-dept')}
       deptId={deptId}
       onDeptSettings={handleDeptSettings}
     />
