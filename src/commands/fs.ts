@@ -20,6 +20,10 @@ export async function moveFile(source: string, destination: string): Promise<voi
   return httpPost<void>('/api/file/move', { source, destination })
 }
 
+export async function renameFile(oldPath: string, newPath: string): Promise<void> {
+  return httpPost<void>('/api/file/rename', { source: oldPath, destination: newPath })
+}
+
 export async function copyFile(source: string, destination: string): Promise<void> {
   return httpPost<void>('/api/file/copy', { source, destination })
 }

@@ -79,6 +79,18 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
     // 供 FileController.Preview 使用的公开路径校验
     public void EnsureSafeRead(string path) => EnsurePathWithinWikiProject(path);
 
+    public void Rename(string oldPath, string newPath)
+    {
+        EnsurePathWithinWikiProject(oldPath);
+        EnsurePathWithinWikiProject(newPath, allowNonExistent: true);
+        if (Directory.Exists(oldPath))
+            Directory.Move(oldPath, newPath);
+        else if (File.Exists(oldPath))
+            File.Move(oldPath, newPath, overwrite: false);
+        else
+            throw new FileNotFoundException($"Path not found: {oldPath}");
+    }
+
     public void MoveFile(string source, string destination)
     {
         EnsurePathWithinWikiProject(source);

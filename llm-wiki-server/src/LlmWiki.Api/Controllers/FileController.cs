@@ -186,6 +186,13 @@ public class FileController(FileService fileService) : ControllerBase
         return sb.ToString();
     }
 
+    [HttpPost("rename")]
+    public IActionResult Rename([FromBody] CopyRequest req)
+    {
+        try { fileService.Rename(req.Source, req.Destination); return Ok(); }
+        catch (Exception ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpPost("move")]
     public IActionResult Move([FromBody] CopyRequest req)
     {

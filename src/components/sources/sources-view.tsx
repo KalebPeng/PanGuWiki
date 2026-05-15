@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
-import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile } from "@/commands/fs"
+import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile, renameFile } from "@/commands/fs"
 import { openFilePreview } from "@/api/dotnet-client"
 import type { FileNode } from "@/types/wiki"
 import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
@@ -464,6 +464,7 @@ export function SourcesView() {
               onDelete={handleDelete}
               onDeleteFolder={handleDeleteFolder}
               onMoveFile={handleMoveFile}
+              onRefresh={loadSources}
               pendingDeletePath={pendingDeletePath}
               setPendingDeletePath={setPendingDeletePath}
               ingestingPath={ingestingPath}
@@ -513,6 +514,7 @@ function SourceTree({
   onDelete,
   onDeleteFolder,
   onMoveFile,
+  onRefresh,
   pendingDeletePath,
   setPendingDeletePath,
   ingestingPath,
@@ -524,6 +526,7 @@ function SourceTree({
   onDelete: (node: FileNode) => void
   onDeleteFolder: (node: FileNode) => void
   onMoveFile: (srcPath: string, destFolderPath: string) => void
+  onRefresh: () => void
   /** Path of the node currently in "click again to confirm" state.
    *  Lifted to the parent so only ONE button is armed at a time
    *  across the whole tree — clicking another delete arms that one
@@ -535,9 +538,38 @@ function SourceTree({
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [dragOverPath, setDragOverPath] = useState<string | null>(null)
+  const [renamingPath, setRenamingPath] = useState<string | null>(null)
+  const [renamingValue, setRenamingValue] = useState("")
+  const [addingSubIn, setAddingSubIn] = useState<string | null>(null)  // 正在哪个文件夹下建子文件夹
+  const [subFolderName, setSubFolderName] = useState("")
 
   const toggle = (path: string) => {
     setCollapsed((prev) => ({ ...prev, [path]: !prev[path] }))
+  }
+
+  async function handleRename(node: FileNode) {
+    const newName = renamingValue.trim()
+    if (!newName || newName === node.name) { setRenamingPath(null); return }
+    const parent = node.path.substring(0, node.path.lastIndexOf('/'))
+    const newPath = `${parent}/${newName}`
+    try {
+      await renameFile(node.path, newPath)
+      onRefresh()
+    } catch (e) { alert(e instanceof Error ? e.message : '重命名失败') }
+    setRenamingPath(null)
+    setRenamingValue("")
+  }
+
+  async function handleCreateSub(node: FileNode) {
+    const name = subFolderName.trim()
+    if (!name) { setAddingSubIn(null); return }
+    try {
+      await createDirectory(`${node.path}/${name}`)
+      setCollapsed(prev => ({ ...prev, [node.path]: false }))
+      onRefresh()
+    } catch (e) { alert(e instanceof Error ? e.message : '创建失败') }
+    setAddingSubIn(null)
+    setSubFolderName("")
   }
 
   /**
@@ -592,30 +624,68 @@ function SourceTree({
                   setDragOverPath(null)
                 }}
               >
-                <button
-                  onClick={() => toggle(node.path)}
-                  className="flex flex-1 items-center gap-1.5 px-1 py-1 text-left"
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                  <span className="truncate font-medium">{node.name}</span>
-                  <span className="ml-auto text-[10px] text-muted-foreground/60 shrink-0">
-                    {countFiles(children)}
-                  </span>
-                </button>
-                <DeleteButton
-                  isPending={isPendingDelete}
-                  onClick={() => handleDeleteClick(node)}
-                  hint={
-                    isPendingDelete
-                      ? `Click again to delete folder ${node.name} and ALL its contents`
-                      : `Delete folder ${node.name} (recursive)`
-                  }
-                />
+                {renamingPath === node.path ? (
+                  <div className="flex flex-1 items-center gap-1.5 px-1 py-0.5">
+                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                    <input
+                      autoFocus
+                      value={renamingValue}
+                      onChange={e => setRenamingValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleRename(node)
+                        if (e.key === 'Escape') { setRenamingPath(null); setRenamingValue("") }
+                      }}
+                      className="flex-1 rounded border border-border bg-background px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button onClick={() => handleRename(node)} className="text-xs text-primary hover:underline shrink-0">确认</button>
+                    <button onClick={() => { setRenamingPath(null); setRenamingValue("") }} className="text-xs text-muted-foreground hover:underline shrink-0">取消</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => toggle(node.path)}
+                    className="flex flex-1 items-center gap-1.5 px-1 py-1 text-left"
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                    <span className="truncate font-medium">{node.name}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground/60 shrink-0">
+                      {countFiles(children)}
+                    </span>
+                  </button>
+                )}
+                {renamingPath !== node.path && (
+                  <>
+                    {/* 新建子文件夹 */}
+                    <button
+                      className="hidden group-hover:flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-accent/50"
+                      title="新建子文件夹"
+                      onClick={() => { setAddingSubIn(node.path); setSubFolderName(""); setCollapsed(prev => ({ ...prev, [node.path]: false })) }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                    {/* 重命名 */}
+                    <button
+                      className="hidden group-hover:flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-accent/50"
+                      title="重命名"
+                      onClick={() => { setRenamingPath(node.path); setRenamingValue(node.name) }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <DeleteButton
+                      isPending={isPendingDelete}
+                      onClick={() => handleDeleteClick(node)}
+                      hint={
+                        isPendingDelete
+                          ? `Click again to delete folder ${node.name} and ALL its contents`
+                          : `Delete folder ${node.name} (recursive)`
+                      }
+                    />
+                  </>
+                )}
               </div>
               {!isCollapsed && (
                 <SourceTree
@@ -625,11 +695,30 @@ function SourceTree({
                   onDelete={onDelete}
                   onDeleteFolder={onDeleteFolder}
                   onMoveFile={onMoveFile}
+                  onRefresh={onRefresh}
                   pendingDeletePath={pendingDeletePath}
                   setPendingDeletePath={setPendingDeletePath}
                   ingestingPath={ingestingPath}
                   depth={depth + 1}
                 />
+              )}
+              {addingSubIn === node.path && (
+                <div className="flex items-center gap-2 py-1" style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}>
+                  <Folder className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                  <input
+                    autoFocus
+                    value={subFolderName}
+                    onChange={e => setSubFolderName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleCreateSub(node)
+                      if (e.key === 'Escape') { setAddingSubIn(null); setSubFolderName("") }
+                    }}
+                    placeholder="子文件夹名..."
+                    className="flex-1 rounded border border-border bg-background px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <button onClick={() => handleCreateSub(node)} className="text-xs text-primary hover:underline">确认</button>
+                  <button onClick={() => { setAddingSubIn(null); setSubFolderName("") }} className="text-xs text-muted-foreground hover:underline">取消</button>
+                </div>
               )}
             </div>
           )
