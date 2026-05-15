@@ -14,8 +14,9 @@
 ## 决策
 
 - 将 ingest 执行权完整迁移到 .NET 后端
-- 放弃 Tauri 桌面模式，统一走 web/云部署路径
+- 放弃 Tauri 桌面模式，统一走 web/云部署路径（Tauri 退场作为独立任务，不在本次范围）
 - LLM 调用由后端发起，API Key 加密存储于 DB
+- **Phase 1 仅支持单实例部署**（见"多实例限制"节）
 
 ---
 
@@ -27,20 +28,41 @@
        └─ DB: IngestTask status=queued
             └─ Channel<Guid>.Writer.TryWrite(taskId)
 
-IngestWorkerService (IHostedService)
-  ├─ 启动：DB 查所有 queued → 写 Channel（崩溃恢复）
+IngestWorkerService (IHostedService，单实例)
+  ├─ 启动：running → queued（重置崩溃中任务）
+  │         queued → Channel（恢复）
   └─ 循环：channel.Reader.ReadAllAsync()
        └─ IngestPipelineService.RunAsync(taskId)
-            ├─ 读 LlmConfig（用户级 → 部门级 fallback）
+            ├─ 读 LlmConfig（task.TriggeredBy 用户级 → 部门级 fallback）
             ├─ LlmClient.StreamChatAsync()（Step 1 分析）
             ├─ LlmClient.StreamChatAsync()（Step 2 生成）
             ├─ 解析 FILE blocks + 写文件（FileService）
             └─ IngestEventBroadcaster.Publish(deptId, event)
                  └─ 广播到该部门所有活跃 SSE 连接
 
-SSE endpoint: GET /api/departments/{deptId}/events
-  └─ 每条连接独立 Channel<IngestEvent>，订阅广播
+SSE 接入流程：
+  前端 POST /api/departments/{deptId}/events/token  → 获取短效 SSE token（TTL 60s）
+  前端 EventSource(/api/departments/{deptId}/events?token=xxx)
+       └─ 每条连接独立 Channel<IngestEvent>，订阅广播
 ```
+
+---
+
+## 多实例限制（Phase 1）
+
+**Phase 1 仅支持单实例部署。** `IngestWorkerService` 使用 in-memory Channel，多实例启动时
+各自扫 `queued` 任务并各自入队，会导致同一任务被重复执行。
+
+Phase 2 如需水平扩展，改为 DB 级原子 claim：
+
+```sql
+-- 原子领取：只有第一个 UPDATE 成功的实例才执行该任务
+UPDATE ingest_tasks
+SET status = 'running', locked_by = @instanceId, started_at = NOW()
+WHERE id = @taskId AND status = 'queued'
+```
+
+单实例部署在 Docker Compose 中通过 `replicas: 1` 或不使用 Swarm/K8s 水平扩展来保证。
 
 ---
 
@@ -62,23 +84,31 @@ public class LlmConfig
 }
 ```
 
-**优先级查询：**
-1. `UserId = currentUser.Id AND IsActive = true` → 用户自己的配置
-2. `DepartmentId = task.DeptId AND IsActive = true` → 部门级兜底
-3. 均无 → 任务失败，`ErrorMessage = "LLM not configured"`
+**优先级查询（在 worker 中，无 HTTP 请求上下文）：**
+1. `UserId = task.TriggeredBy AND IsActive = true` → 发起人的个人配置
+2. `DepartmentId = task.DepartmentId AND IsActive = true` → 部门级兜底
+3. 均无 → 任务失败，`ErrorMessage = "LLM not configured for this user or department"`
 
-**API Key 加密：** 使用 .NET 内置 `IDataProtector`，密钥自动管理，无需额外依赖。  
-读写封装在 `LlmConfigService`，不散落到业务逻辑中。
+`task.TriggeredBy` 在 `IngestTask` 实体上已存在，worker 运行时直接使用，无需 HTTP 请求上下文。
+
+**API Key 加密：** 使用 .NET 内置 `IDataProtector`，读写封装在 `LlmConfigService`。
+
+> **部署要求：** 必须显式配置 Data Protection key ring 持久化，否则容器重建后无法解密
+> DB 中已存储的 key。推荐方案：
+> - **文件系统（Docker volume）：** `builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo("/data/keys"))`，并在 `docker-compose.yml` 中将 `/data/keys` 挂载为具名卷
+> - **数据库（EF Core）：** 安装 `Microsoft.AspNetCore.DataProtection.EntityFrameworkCore`，改用 `PersistKeysToDbContext<AppDbContext>()`，key ring 随业务数据库一起备份
+>
+> 不可依赖默认行为（内存/临时目录），否则实例轮转后旧密文无法解开。
 
 ### 扩展：`IngestTask` 表
 
-新增一个字段：
+新增字段：
 
 ```csharp
 public string? ProgressDetail { get; set; }  // 当前步骤，如 "Step 1/2: Analyzing..."
 ```
 
-写 SSE 事件时同步更新 DB，客户端断线重连时通过 `Last-Event-ID` 机制恢复最后状态，不会白屏。
+推 SSE 事件时同步写 DB，断线重连时作为初始快照返回。
 
 ---
 
@@ -87,7 +117,11 @@ public string? ProgressDetail { get; set; }  // 当前步骤，如 "Step 1/2: An
 ### IngestWorkerService
 
 ```csharp
-// 启动时从 DB 恢复
+// 启动时：先重置崩溃中的 running 任务，再恢复 queued
+await db.IngestTasks
+    .Where(t => t.Status == "running")
+    .ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "queued"));
+
 var queued = await db.IngestTasks
     .Where(t => t.Status == "queued")
     .OrderBy(t => t.QueuedAt)
@@ -101,8 +135,9 @@ await foreach (var taskId in channel.Reader.ReadAllAsync(ct))
 ```
 
 - Channel 使用 `Channel.CreateUnbounded<Guid>()`
-- 写入幂等：`RunAsync` 开始前检查 DB status，非 `queued`/`running` 则跳过
-- 串行执行，同一部门多任务排队；如需并发，在 Channel 上加 `SemaphoreSlim` 即可
+- `RunAsync` 开始前检查 DB status（幂等保护），非 `queued` 则跳过
+- 串行执行；如需并发，在 Channel 上加 `SemaphoreSlim` 即可，不影响现有接口
+- 维护内存字段 `LastCompletedAt`、`CurrentTaskId` 供健康检查使用
 
 ### IngestEventBroadcaster
 
@@ -153,6 +188,7 @@ if (data == "[DONE]") yield break;
 
 // Anthropic 分支 —— 终止在 event: 行而非 data: 行
 // 需同时跟踪当前 event 类型；只有 content_block_delta 时才提取 delta.text
+// 其他 event（message_start、content_block_start、ping）直接跳过
 if (line.StartsWith("event:") && line.Contains("message_stop")) yield break;
 ```
 
@@ -168,18 +204,18 @@ Anthropic URL 构建需处理用户输入的各种形式（`/v1`、`/v1/messages
 
 ```
 RunAsync(taskId):
-  1. 读 IngestTask，检查 status（幂等保护）
-  2. 解析 LlmConfig（用户级 → 部门级）
+  1. 读 IngestTask，检查 status（非 queued 则跳过，幂等保护）
+  2. 解析 LlmConfig（task.TriggeredBy 用户级 → 部门级）
   3. 读源文件内容（FileService）
   4. 读项目元文件（schema.md / purpose.md / index.md / overview.md）
   5. 检查 ingest cache（.llm-wiki/ingest-cache.json）
      → 命中则更新 DB status=done，跳过 LLM
   6. Step 1：StreamChatAsync → 收集 analysis
-     → PATCH DB ProgressDetail = "Step 1/2: Analyzing..."
-     → Publish SSE event
+     → 更新 DB ProgressDetail = "Step 1/2: Analyzing..."
+     → Publish SSE event（含 id 字段）
   7. Step 2：StreamChatAsync → 收集 generation
-     → PATCH DB ProgressDetail = "Step 2/2: Generating..."
-     → Publish SSE event
+     → 更新 DB ProgressDetail = "Step 2/2: Generating..."
+     → Publish SSE event（含 id 字段）
   8. ParseFileBlocks(generation)
      → 路径安全校验（必须 wiki/ 开头，无 .. 段）
   9. 写文件（FileService）
@@ -193,19 +229,36 @@ RunAsync(taskId):
 
 ---
 
-## SSE Endpoint
+## SSE Endpoint 与鉴权
+
+浏览器原生 `EventSource` 不支持自定义 `Authorization` 请求头，无法复用现有 JWT Bearer 鉴权。
+采用**短效 SSE token**方案：
 
 ```
-GET /api/departments/{deptId}/events
-Content-Type: text/event-stream
+// Step 1：用已有 JWT 换 SSE token（TTL 60s，一次性）
+POST /api/departments/{deptId}/events/token
+Authorization: Bearer <jwt>
+→ { "token": "sse-token-xxx", "expiresAt": "..." }
 
+// Step 2：用 token 建立 SSE 连接
+EventSource("/api/departments/{deptId}/events?token=sse-token-xxx")
+```
+
+SSE token 由服务端生成，存于内存（`ConcurrentDictionary<string, SseTokenInfo>`），过期或使用后立即作废。
+
+**SSE 事件格式（含 id 字段）：**
+
+```
+id: 42
 data: {"taskId":"...","step":"analyzing","detail":"Step 1/2: Analyzing...","timestamp":"..."}
-data: {"taskId":"...","step":"generating","detail":"Step 2/2: Generating...","timestamp":"..."}
+
+id: 43
 data: {"taskId":"...","step":"done","detail":"3 files written","timestamp":"..."}
 ```
 
-- 客户端使用 `EventSource` 订阅，原生支持断线自动重连
-- 重连时携带 `Last-Event-ID`，服务端可返回 `IngestTask.ProgressDetail` 作为初始状态
+**断线恢复：** `EventSource` 自动重连时携带 `Last-Event-ID: 42`。服务端在内存中保留最近
+100 条事件（按 deptId），重连时将 `lastEventId` 之后的事件重放给客户端。若事件已超出保留
+窗口，返回当前各任务的 `ProgressDetail` 快照作为兜底，前端不会白屏。
 
 ---
 
@@ -237,41 +290,49 @@ Docker Compose 配置 `healthcheck` 打此接口，`workerAlive: false` 或非 2
 
 ## 前端变更
 
-**移除：**
+**移除（仅 ingest 执行路径，不涉及 Tauri 退场）：**
 - `ingest-queue.ts` 中 `processNext` / `autoIngest` 的调用（执行路径）
 - `ingest-queue.json` 的读写逻辑
 - `pauseQueue` / `restoreQueue` 项目切换处理
-- `tauri-fetch.ts` Tauri 路径、`src-tauri/` 目录、`fs.ts` Tauri invoke 分支
 
 **新增：**
-- `EventSource` 订阅 `/api/departments/{deptId}/events`，收到事件更新 `tasks-store`
+- 调用 `POST .../events/token` 获取 SSE token，再建立 `EventSource` 连接
+- 收到 SSE 事件后更新 `tasks-store`
 - 用户级 LLM 配置页（填写 provider / endpoint / key / model）
 
 **保留：**
 - `IngestTask` 类型定义（对齐后端 response 结构）
 - 任务列表 UI 和进度展示组件
 
+> **Tauri 退场（删除 `tauri-fetch.ts`、`src-tauri/`、`fs.ts` Tauri 分支等）作为独立任务处理，**
+> 不在本次迁移范围内。`tauri-fetch` 当前还被 `llm-client.ts`、`embedding.ts`、
+> `web-search.ts` 等多处使用，范围超出 ingest，单独做更安全。
+
 ---
 
 ## 分阶段计划
 
-### Phase 1（本次迁移 MVP）
+### Phase 1（本次迁移 MVP，单实例）
 
-- [ ] `LlmConfig` 表 + CRUD API + `IDataProtector` 加密
+- [ ] `LlmConfig` 表 + CRUD API + `IDataProtector` 加密（含 key ring 持久化配置）
 - [ ] `LlmClient`（OpenAI-compat + Anthropic 两分支，含终止信号处理）
 - [ ] `IngestPipelineService`（Step 1 + Step 2 + 写文件 + ingest cache）
-- [ ] `IngestWorkerService`（Channel + 启动恢复 + 健康状态字段）
-- [ ] `IngestEventBroadcaster`（per-connection Channel 广播）
-- [ ] SSE endpoint（`/api/departments/{deptId}/events`）
-- [ ] 健康检查接口（`/api/health/ingest-worker`）+ Docker healthcheck
-- [ ] 前端移除浏览器端执行路径，接入 SSE
-- [ ] 删除 Tauri 相关代码
+- [ ] `IngestWorkerService`（Channel + 启动恢复：running→queued + queued→Channel）
+- [ ] `IngestEventBroadcaster`（per-connection Channel 广播 + 最近 100 条事件缓存）
+- [ ] SSE token 接口（`POST .../events/token`）+ SSE endpoint（带 `id:` 字段）
+- [ ] 健康检查接口（`GET /api/health/ingest-worker`）+ Docker healthcheck
+- [ ] 前端移除浏览器端执行路径，接入 SSE token 鉴权方案
 
 ### Phase 2（后续迭代）
 
+- [ ] 多实例支持（DB 级原子 claim/lease）
 - [ ] Gemini provider 支持
 - [ ] 图片提取 + Caption（基于已有 `ExtractController`）
 - [ ] 向量 embedding（基于已有 `VectorController`）
 - [ ] Review block 解析写入 DB
 - [ ] 语言检测过滤
 - [ ] ingest cache 迁移到 DB（解除文件并发限制）
+
+### 独立任务（不在本迁移范围）
+
+- [ ] Tauri 退场（删除 `tauri-fetch.ts`、`src-tauri/`、`fs.ts` Tauri 分支等）
