@@ -6,8 +6,7 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile, renameFile } from "@/commands/fs"
 import { openFilePreview } from "@/api/dotnet-client"
 import type { FileNode } from "@/types/wiki"
-import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
-import { hasUsableLlm } from "@/lib/has-usable-llm"
+import { enqueueIngest } from "@/lib/ingest-queue"
 import { useTranslation } from "react-i18next"
 import { normalizePath } from "@/lib/path-utils"
 import { parseSources, writeSources } from "@/lib/sources-merge"
@@ -18,8 +17,6 @@ import {
   decideDeleteClick,
 } from "@/lib/sources-tree-delete"
 
-const INGESTABLE_EXTS = ["md", "mdx", "txt", "pdf", "docx", "pptx", "xlsx", "xls",
-                         "csv", "json", "html", "htm", "rtf", "xml", "yaml", "yml"]
 
 export function SourcesView() {
   const { t } = useTranslation()
@@ -28,7 +25,6 @@ export function SourcesView() {
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const setFileContent = useWikiStore((s) => s.setFileContent)
   const setFileTree = useWikiStore((s) => s.setFileTree)
-  const llmConfig = useWikiStore((s) => s.llmConfig)
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
@@ -46,6 +42,8 @@ export function SourcesView() {
    *      anchored here is the right scope.
    */
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null)
+  // 已写入 Wiki 的文件名集合（从 ingest-cache 读取）
+  const [ingestedFiles, setIngestedFiles] = useState<Set<string>>(new Set())
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
   const newFolderInputRef = useRef<HTMLInputElement>(null)
@@ -65,11 +63,19 @@ export function SourcesView() {
     const pp = normalizePath(project.path)
     try {
       const tree = await listDirectory(`${pp}/raw/sources`)
-      // Filter out hidden files/dirs and cache
       const filtered = filterTree(tree)
       setSources(filtered)
     } catch {
       setSources([])
+    }
+    // 读取 ingest-cache，标记已写入 Wiki 的文件
+    try {
+      const cachePath = `${normalizePath(project.path)}/.llm-wiki/ingest-cache.json`
+      const raw = await readFile(cachePath)
+      const data = JSON.parse(raw) as { entries: Record<string, unknown> }
+      setIngestedFiles(new Set(Object.keys(data.entries)))
+    } catch {
+      setIngestedFiles(new Set())
     }
   }, [project])
 
@@ -117,19 +123,9 @@ export function SourcesView() {
     const destDir = `${pp}/raw/sources`
     try {
       const savedPaths = await uploadFiles(destDir, files)
+      // 仅预处理（文本提取缓存），不自动 ingest
       for (const p of savedPaths) preprocessFile(p).catch(() => {})
       await loadSources()
-      if (hasUsableLlm(llmConfig)) {
-        const tasks = savedPaths
-          .filter((fp) => INGESTABLE_EXTS.includes(fp.split(".").pop()?.toLowerCase() ?? ""))
-          .map((fp) => {
-            const rel = normalizePath(fp).replace(normalizePath(destDir) + "/", "")
-            const parts = rel.split("/")
-            parts.pop()
-            return { sourcePath: fp, folderContext: parts.join(" > ") }
-          })
-        if (tasks.length > 0) await enqueueBatch(project.id, tasks)
-      }
     } catch (err) {
       console.error("Upload failed:", err)
     } finally {
@@ -348,16 +344,11 @@ export function SourcesView() {
 
   async function handleIngest(node: FileNode) {
     if (!project || ingestingPath) return
-    // Re-ingest goes through the same automated queue path as a fresh
-    // import (`handleImport` above). Earlier this used `startIngest`,
-    // which opens an interactive chat → user clicks "Save to Wiki" →
-    // `executeIngestWrites`. That had two problems: (a) it duplicated
-    // the auto-pipeline so features like image cascade had to be
-    // wired in twice, and (b) the interactive flow surprised users
-    // who expected a fresh-import re-run. One button, one path now.
     setIngestingPath(node.path)
     try {
       await enqueueIngest(project.id, node.path)
+      // 标记为已写入 Wiki
+      setIngestedFiles(prev => new Set([...prev, node.name]))
     } catch (err) {
       console.error("Failed to enqueue ingest:", err)
     } finally {
@@ -468,6 +459,7 @@ export function SourcesView() {
               pendingDeletePath={pendingDeletePath}
               setPendingDeletePath={setPendingDeletePath}
               ingestingPath={ingestingPath}
+              ingestedFiles={ingestedFiles}
               depth={0}
             />
           </div>
@@ -518,6 +510,7 @@ function SourceTree({
   pendingDeletePath,
   setPendingDeletePath,
   ingestingPath,
+  ingestedFiles,
   depth,
 }: {
   nodes: FileNode[]
@@ -527,6 +520,7 @@ function SourceTree({
   onDeleteFolder: (node: FileNode) => void
   onMoveFile: (srcPath: string, destFolderPath: string) => void
   onRefresh: () => void
+  ingestedFiles: Set<string>
   /** Path of the node currently in "click again to confirm" state.
    *  Lifted to the parent so only ONE button is armed at a time
    *  across the whole tree — clicking another delete arms that one
@@ -699,6 +693,7 @@ function SourceTree({
                   pendingDeletePath={pendingDeletePath}
                   setPendingDeletePath={setPendingDeletePath}
                   ingestingPath={ingestingPath}
+                  ingestedFiles={ingestedFiles}
                   depth={depth + 1}
                 />
               )}
@@ -747,6 +742,9 @@ function SourceTree({
             >
               <FileText className="h-4 w-4 shrink-0" />
               <span className="truncate">{node.name}</span>
+              {ingestedFiles.has(node.name) && (
+                <span className="ml-1 shrink-0 h-2 w-2 rounded-full bg-green-500" title="已写入 Wiki" />
+              )}
             </button>
             <Button
               variant="ghost"
