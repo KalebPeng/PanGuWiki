@@ -1,5 +1,6 @@
 using LlmWiki.Api.Modules.Identity.Entities;
 using LlmWiki.Api.Modules.Org.Entities;
+using LlmWiki.Api.Modules.Wiki.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace LlmWiki.Api.Infrastructure;
@@ -12,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<DepartmentMember> DepartmentMembers => Set<DepartmentMember>();
     public DbSet<DepartmentModule> DepartmentModules => Set<DepartmentModule>();
+    public DbSet<IngestTask> IngestTasks => Set<IngestTask>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +82,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.ToTable("department_modules");
             e.HasKey(m => new { m.DepartmentId, m.ModuleKey }); // 复合主键
+        });
+
+        modelBuilder.Entity<IngestTask>(e =>
+        {
+            e.ToTable("ingest_tasks");
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(t => t.Status).HasDefaultValue("queued");
+            e.Property(t => t.QueuedAt).HasDefaultValueSql("now()");
+            e.HasIndex(t => new { t.DepartmentId, t.SourceFileName });
+            e.HasIndex(t => t.DepartmentId);
         });
     }
 }

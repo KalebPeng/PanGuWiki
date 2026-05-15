@@ -3,6 +3,7 @@ using System;
 using LlmWiki.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace LlmWiki.Api.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260515060623_AddIngestRecords")]
+    partial class AddIngestRecords
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -267,7 +270,7 @@ namespace LlmWiki.Api.Infrastructure.Migrations
                     b.ToTable("organizations", (string)null);
                 });
 
-            modelBuilder.Entity("LlmWiki.Api.Modules.Wiki.Entities.IngestTask", b =>
+            modelBuilder.Entity("LlmWiki.Api.Modules.Wiki.Entities.IngestRecord", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -275,23 +278,19 @@ namespace LlmWiki.Api.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("completed_at");
-
                     b.Property<Guid>("DepartmentId")
                         .HasColumnType("uuid")
                         .HasColumnName("department_id");
 
-                    b.Property<string>("ErrorMessage")
-                        .HasColumnType("text")
-                        .HasColumnName("error_message");
-
-                    b.Property<DateTime>("QueuedAt")
+                    b.Property<DateTime>("IngestedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("queued_at")
+                        .HasColumnName("ingested_at")
                         .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("IngestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ingested_by");
 
                     b.Property<string>("SourceFileName")
                         .IsRequired()
@@ -303,35 +302,17 @@ namespace LlmWiki.Api.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_file_path");
 
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("queued")
-                        .HasColumnName("status");
-
-                    b.Property<Guid?>("TriggeredBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("triggered_by");
-
-                    b.Property<int?>("WikiPagesCount")
+                    b.Property<int>("WikiPagesCount")
                         .HasColumnType("integer")
                         .HasColumnName("wiki_pages_count");
 
                     b.HasKey("Id")
-                        .HasName("pk_ingest_tasks");
-
-                    b.HasIndex("DepartmentId")
-                        .HasDatabaseName("ix_ingest_tasks_department_id");
+                        .HasName("pk_ingest_records");
 
                     b.HasIndex("DepartmentId", "SourceFileName")
-                        .HasDatabaseName("ix_ingest_tasks_department_id_source_file_name");
+                        .HasDatabaseName("ix_ingest_records_department_id_source_file_name");
 
-                    b.ToTable("ingest_tasks", (string)null);
+                    b.ToTable("ingest_records", (string)null);
                 });
 
             modelBuilder.Entity("LlmWiki.Api.Modules.Org.Entities.Department", b =>

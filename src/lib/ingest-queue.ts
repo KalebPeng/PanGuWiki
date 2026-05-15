@@ -19,6 +19,8 @@ export interface IngestTask {
   addedAt: number
   error: string | null
   retryCount: number
+  deptId?: string  // 部门 ID，多租户模式下用于调用入库记录 API
+  dbTaskId?: string  // 后端 DB Task ID，用于后续 PATCH 更新
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -116,6 +118,7 @@ export async function enqueueIngest(
   projectId: string,
   sourcePath: string,
   folderContext: string = "",
+  deptId?: string,
 ): Promise<string> {
   if (!currentProjectId || currentProjectId !== projectId) {
     throw new Error(
@@ -132,10 +135,28 @@ export async function enqueueIngest(
     addedAt: Date.now(),
     error: null,
     retryCount: 0,
+    deptId,
   }
 
   queue.push(task)
   await saveQueue(currentProjectPath)
+
+  // 创建 DB Task（异步，不阻塞入队）
+  if (deptId) {
+    ;(async () => {
+      try {
+        const { httpPost } = await import("@/api/dotnet-client")
+        const fileName = task.sourcePath.split('/').pop() ?? task.sourcePath
+        const result = await httpPost<{ id: string; status: string }>(
+          `/api/departments/${deptId}/ingest-tasks`,
+          { source_file_name: fileName, source_file_path: task.sourcePath }
+        )
+        // 更新队列中该 task 的 dbTaskId
+        const existing = queue.find(t => t.id === task.id)
+        if (existing) existing.dbTaskId = result.id
+      } catch { /* 非关键，静默失败 */ }
+    })()
+  }
 
   processNext(currentProjectId)
 
@@ -149,6 +170,7 @@ export async function enqueueIngest(
 export async function enqueueBatch(
   projectId: string,
   files: Array<{ sourcePath: string; folderContext: string }>,
+  deptId?: string,
 ): Promise<string[]> {
   if (!currentProjectId || currentProjectId !== projectId) {
     throw new Error(
@@ -167,6 +189,7 @@ export async function enqueueBatch(
       addedAt: Date.now(),
       error: null,
       retryCount: 0,
+      deptId,
     }
     queue.push(task)
     ids.push(task.id)
@@ -471,6 +494,19 @@ async function processNext(projectId: string): Promise<void> {
   await saveQueue(pp)
   if (currentProjectId !== projectId) return
 
+  // PATCH status = running
+  if (next.dbTaskId && next.deptId) {
+    ;(async () => {
+      try {
+        const { httpPatch } = await import("@/api/dotnet-client")
+        await httpPatch(`/api/departments/${next.deptId}/ingest-tasks/${next.dbTaskId}`, {
+          status: "running",
+          started_at: new Date().toISOString(),
+        })
+      } catch { /* 静默失败 */ }
+    })()
+  }
+
   const llmConfig = useWikiStore.getState().llmConfig
 
   // Check if LLM is configured
@@ -516,6 +552,19 @@ async function processNext(projectId: string): Promise<void> {
     processedSinceDrain = true
     await saveQueue(pp)
 
+    if (next.dbTaskId && next.deptId) {
+      ;(async () => {
+        try {
+          const { httpPatch } = await import("@/api/dotnet-client")
+          await httpPatch(`/api/departments/${next.deptId}/ingest-tasks/${next.dbTaskId}`, {
+            status: "done",
+            wiki_pages_count: writtenFiles.length,
+            completed_at: new Date().toISOString(),
+          })
+        } catch { /* 静默失败 */ }
+      })()
+    }
+
     console.log(`[Ingest Queue] Done: ${next.sourcePath}`)
   } catch (err) {
     if (currentProjectId !== projectId) return
@@ -527,6 +576,18 @@ async function processNext(projectId: string): Promise<void> {
     if (next.retryCount >= MAX_RETRIES) {
       next.status = "failed"
       console.log(`[Ingest Queue] Failed (${next.retryCount}x): ${next.sourcePath} — ${message}`)
+      if (next.dbTaskId && next.deptId) {
+        ;(async () => {
+          try {
+            const { httpPatch } = await import("@/api/dotnet-client")
+            await httpPatch(`/api/departments/${next.deptId}/ingest-tasks/${next.dbTaskId}`, {
+              status: "failed",
+              error_message: String(err).slice(0, 500),
+              completed_at: new Date().toISOString(),
+            })
+          } catch { /* 静默失败 */ }
+        })()
+      }
     } else {
       next.status = "pending" // will retry
       console.log(`[Ingest Queue] Error (retry ${next.retryCount}/${MAX_RETRIES}): ${next.sourcePath} — ${message}`)

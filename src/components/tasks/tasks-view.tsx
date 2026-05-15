@@ -25,6 +25,8 @@ import {
 import { useResearchStore } from "@/stores/research-store"
 import { useActivityStore } from "@/stores/activity-store"
 import { useTasksStore } from "@/stores/tasks-store"
+import { useOrgStore } from "@/stores/org-store"
+import { httpGet } from "@/api/dotnet-client"
 import {
   applyTaskFilters,
   mapActivityItemToViewModel,
@@ -36,6 +38,56 @@ import {
   type TaskStatus,
   type TaskViewModel,
 } from "@/lib/tasks-model"
+
+// ── DB Ingest Task types ──────────────────────────────────────────────────
+
+interface DbIngestTask {
+  id: string
+  source_file_name: string
+  source_file_path: string
+  status: string  // queued | running | done | failed
+  wiki_pages_count: number | null
+  triggered_by: string | null
+  queued_at: string
+  started_at: string | null
+  completed_at: string | null
+  error_message: string | null
+}
+
+function dbTaskToViewModel(t: DbIngestTask): TaskViewModel {
+  return {
+    id: `db-${t.id}`,
+    kind: "ingest",
+    source: "activity-store",
+    title: t.source_file_name,
+    status: t.status === "done" ? "done"
+          : t.status === "failed" ? "failed"
+          : t.status === "running" ? "running"
+          : "queued",
+    detail: t.status === "done"
+          ? `${t.wiki_pages_count ?? 0} 个页面写入 Wiki`
+          : t.error_message ?? "",
+    createdAt: new Date(t.queued_at).getTime(),
+    updatedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
+    filesWritten: [],
+    relatedPaths: [t.source_file_path],
+    canCancel: false,
+    canRetry: false,
+  }
+}
+
+function useDbIngestTasks(activeDeptId: string | null): DbIngestTask[] {
+  const [dbTasks, setDbTasks] = useState<DbIngestTask[]>([])
+
+  useEffect(() => {
+    if (!activeDeptId) return
+    httpGet<DbIngestTask[]>(`/api/departments/${activeDeptId}/ingest-tasks`)
+      .then(setDbTasks)
+      .catch(() => {})
+  }, [activeDeptId])
+
+  return dbTasks
+}
 
 // ── Status + kind metadata ────────────────────────────────────────────────
 
@@ -263,8 +315,11 @@ export function TasksView() {
   const kindFilter = useTasksStore((s) => s.kindFilter)
   const setKindFilter = useTasksStore((s) => s.setKindFilter)
 
+  const activeDeptId = useOrgStore((s) => s.activeDeptId)
+  const dbTasksRaw = useDbIngestTasks(activeDeptId)
+
   const tasks = useMemo(() => {
-    return mergeTaskSnapshots({
+    const memoryTasks = mergeTaskSnapshots({
       queued: [
         ...ingestQueue.map(mapIngestTaskToViewModel),
         ...mergeQueue.map(mapDedupTaskToViewModel),
@@ -273,7 +328,15 @@ export function TasksView() {
       activity: activityItems.map(mapActivityItemToViewModel),
       recentCompleted,
     })
-  }, [ingestQueue, mergeQueue, researchTasks, activityItems, recentCompleted])
+
+    // Deduplicate: skip DB tasks whose file name is already in memory
+    const inMemoryTitles = new Set(memoryTasks.map((t) => t.title))
+    const dbTaskViewModels = dbTasksRaw
+      .filter((t) => !inMemoryTitles.has(t.source_file_name))
+      .map(dbTaskToViewModel)
+
+    return [...memoryTasks, ...dbTaskViewModels]
+  }, [ingestQueue, mergeQueue, researchTasks, activityItems, recentCompleted, dbTasksRaw])
 
   const filtered = useMemo(
     () => applyTaskFilters(tasks, statusFilter, kindFilter),

@@ -3,8 +3,9 @@ import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, Chev
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
+import { useOrgStore } from "@/stores/org-store"
 import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile, renameFile } from "@/commands/fs"
-import { openFilePreview } from "@/api/dotnet-client"
+import { openFilePreview, httpGet } from "@/api/dotnet-client"
 import type { FileNode } from "@/types/wiki"
 import { enqueueIngest } from "@/lib/ingest-queue"
 import { useTranslation } from "react-i18next"
@@ -42,8 +43,11 @@ export function SourcesView() {
    *      anchored here is the right scope.
    */
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null)
-  // 已写入 Wiki 的文件名集合（从 ingest-cache 读取）
+
+  // 已写入 Wiki 的文件名集合（从 API 加载）
+  const activeDeptId = useOrgStore(s => s.activeDeptId)
   const [ingestedFiles, setIngestedFiles] = useState<Set<string>>(new Set())
+  const [inProgressFiles, setInProgressFiles] = useState<Set<string>>(new Set())
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
   const newFolderInputRef = useRef<HTMLInputElement>(null)
@@ -68,16 +72,24 @@ export function SourcesView() {
     } catch {
       setSources([])
     }
-    // 读取 ingest-cache，标记已写入 Wiki 的文件
-    try {
-      const cachePath = `${normalizePath(project.path)}/.llm-wiki/ingest-cache.json`
-      const raw = await readFile(cachePath)
-      const data = JSON.parse(raw) as { entries: Record<string, unknown> }
-      setIngestedFiles(new Set(Object.keys(data.entries)))
-    } catch {
-      setIngestedFiles(new Set())
+    // 从数据库加载已入库文件名（多租户模式）
+    if (activeDeptId) {
+      try {
+        const tasks = await httpGet<{ source_file_name: string; status: string }[]>(
+          `/api/departments/${activeDeptId}/ingest-tasks`
+        )
+        setIngestedFiles(new Set(
+          tasks.filter(t => t.status === 'done').map(t => t.source_file_name)
+        ))
+        setInProgressFiles(new Set(
+          tasks.filter(t => t.status === 'running' || t.status === 'queued').map(t => t.source_file_name)
+        ))
+      } catch {
+        setIngestedFiles(new Set())
+        setInProgressFiles(new Set())
+      }
     }
-  }, [project])
+  }, [project, activeDeptId])
 
   useEffect(() => {
     loadSources()
@@ -346,8 +358,8 @@ export function SourcesView() {
     if (!project || ingestingPath) return
     setIngestingPath(node.path)
     try {
-      await enqueueIngest(project.id, node.path)
-      // 标记为已写入 Wiki
+      await enqueueIngest(project.id, node.path, "", activeDeptId ?? undefined)
+      // 乐观更新：立即显示绿点，不等 API 回调
       setIngestedFiles(prev => new Set([...prev, node.name]))
     } catch (err) {
       console.error("Failed to enqueue ingest:", err)
@@ -460,6 +472,7 @@ export function SourcesView() {
               setPendingDeletePath={setPendingDeletePath}
               ingestingPath={ingestingPath}
               ingestedFiles={ingestedFiles}
+              inProgressFiles={inProgressFiles}
               depth={0}
             />
           </div>
@@ -511,6 +524,7 @@ function SourceTree({
   setPendingDeletePath,
   ingestingPath,
   ingestedFiles,
+  inProgressFiles,
   depth,
 }: {
   nodes: FileNode[]
@@ -521,6 +535,7 @@ function SourceTree({
   onMoveFile: (srcPath: string, destFolderPath: string) => void
   onRefresh: () => void
   ingestedFiles: Set<string>
+  inProgressFiles: Set<string>
   /** Path of the node currently in "click again to confirm" state.
    *  Lifted to the parent so only ONE button is armed at a time
    *  across the whole tree — clicking another delete arms that one
@@ -694,6 +709,7 @@ function SourceTree({
                   setPendingDeletePath={setPendingDeletePath}
                   ingestingPath={ingestingPath}
                   ingestedFiles={ingestedFiles}
+                  inProgressFiles={inProgressFiles}
                   depth={depth + 1}
                 />
               )}
@@ -742,7 +758,10 @@ function SourceTree({
             >
               <FileText className="h-4 w-4 shrink-0" />
               <span className="truncate">{node.name}</span>
-              {ingestedFiles.has(node.name) && (
+              {inProgressFiles.has(node.name) && (
+                <span className="ml-1 shrink-0 h-2 w-2 rounded-full bg-yellow-400" title="入库中..." />
+              )}
+              {ingestedFiles.has(node.name) && !inProgressFiles.has(node.name) && (
                 <span className="ml-1 shrink-0 h-2 w-2 rounded-full bg-green-500" title="已写入 Wiki" />
               )}
             </button>
