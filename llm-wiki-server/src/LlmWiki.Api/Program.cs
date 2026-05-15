@@ -3,6 +3,7 @@ using LlmWiki.Api.Infrastructure;
 using LlmWiki.Api.Modules.Identity;
 using LlmWiki.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -85,6 +86,13 @@ builder.Services.Configure<WikiProjectsOptions>(builder.Configuration.GetSection
 builder.Services.Configure<CloudWikiOptions>(builder.Configuration.GetSection("LlmWikiCloud"));
 builder.Services.AddSingleton<CloudWikiService>();
 builder.Services.AddScoped<ClaudeWebSocket>();
+
+// DataProtection — key ring must be persisted, otherwise container rebuilds cannot decrypt DB-stored keys
+var keysPath = builder.Configuration["DataProtection:KeysPath"] ?? "/data/keys";
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new System.IO.DirectoryInfo(keysPath));
+
+builder.Services.AddSingleton<LlmConfigService>();
 
 var app = builder.Build();
 
