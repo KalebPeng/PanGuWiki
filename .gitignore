@@ -24,6 +24,7 @@ artifacts/
 
 # Internal docs (not shipped)
 docs/
+!docs/superpowers/
 AGENTS.md
 
 # Benchmark and test data (local only)
