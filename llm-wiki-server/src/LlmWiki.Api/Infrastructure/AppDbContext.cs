@@ -98,15 +98,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<LlmConfig>(e =>
         {
-            e.ToTable("llm_configs");
+            e.ToTable("llm_configs", t => t.HasCheckConstraint(
+                "chk_llm_config_scope",
+                "num_nonnulls(user_id, department_id) = 1"));
             e.HasKey(c => c.Id);
             e.Property(c => c.Id).HasDefaultValueSql("gen_random_uuid()");
             e.Property(c => c.IsActive).HasDefaultValue(true);
             e.Property(c => c.MaxContextSize).HasDefaultValue(32000);
             e.Property(c => c.CreatedAt).HasDefaultValueSql("now()");
-            e.ToTable(t => t.HasCheckConstraint(
-                "chk_llm_config_scope",
-                "num_nonnulls(user_id, department_id) = 1"));
             e.HasIndex(c => c.UserId)
              .HasFilter("user_id IS NOT NULL AND is_active = true")
              .IsUnique();
