@@ -13,4 +13,5 @@ public class IngestTask
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? ProgressDetail { get; set; }
 }
