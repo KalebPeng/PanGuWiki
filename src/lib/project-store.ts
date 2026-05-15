@@ -209,25 +209,3 @@ export async function loadOutputLanguage(projectId?: string): Promise<OutputLang
 // auto-check" toggle, the timestamp we last checked (so the 6-hour cache
 // survives restarts), and the version the user explicitly dismissed
 // (so we don't re-nag on every restart until a newer version is out).
-
-const UPDATE_CHECK_STATE_KEY = "updateCheckState"
-
-export interface PersistedUpdateCheckState {
-  enabled: boolean
-  lastCheckedAt: number | null
-  dismissedVersion: string | null
-}
-
-export async function saveUpdateCheckState(
-  state: PersistedUpdateCheckState,
-): Promise<void> {
-  const store = await getStore()
-  await store.set(UPDATE_CHECK_STATE_KEY, state)
-}
-
-export async function loadUpdateCheckState(): Promise<PersistedUpdateCheckState | null> {
-  const store = await getStore()
-  return (
-    (await store.get<PersistedUpdateCheckState>(UPDATE_CHECK_STATE_KEY)) ?? null
-  )
-}

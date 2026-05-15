@@ -28,6 +28,15 @@ function parseProviderConfig(argv: string[]): WikiProviderConfig {
     }
   }
 
+  if (mode === "dept") {
+    return {
+      mode: "dept",
+      baseUrl: getArg(argv, "--base-url"),
+      deptId: getArg(argv, "--dept-id"),
+      apiKey: getArg(argv, "--api-key"),
+    }
+  }
+
   throw new Error(`Unsupported provider mode: ${mode}`)
 }
 

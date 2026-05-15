@@ -3,7 +3,6 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { listDirectory } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 import { IconSidebar } from "./icon-sidebar"
-import { UpdateBanner } from "./update-banner"
 import { SidebarPanel } from "./sidebar-panel"
 import { ContentArea } from "./content-area"
 import { PreviewPanel } from "./preview-panel"
@@ -93,13 +92,7 @@ export function AppLayout({ onSwitchProject, deptId, onDeptSettings }: AppLayout
   const hasRightPanel = !isSettings && !!(selectedFile || researchPanelOpen)
 
   return (
-    // Outer column layout: full-width update banner on top (when an
-    // update is available AND not dismissed for this version), the
-    // existing IconSidebar + content row below. Banner is shrink-0
-    // so it doesn't compress the work area; main row is flex-1 so
-    // it fills the rest of the viewport.
     <div className="flex h-screen flex-col bg-background text-foreground">
-      <UpdateBanner />
       <div className="flex min-h-0 flex-1">
         <IconSidebar onSwitchProject={onSwitchProject} deptId={deptId} onDeptSettings={onDeptSettings} />
         <div ref={containerRef} className="flex min-w-0 flex-1 overflow-hidden">

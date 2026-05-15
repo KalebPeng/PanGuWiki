@@ -15,7 +15,14 @@ export interface CloudProviderConfig {
   apiKey?: string
 }
 
-export type WikiProviderConfig = LocalProviderConfig | CloudProviderConfig
+export interface DeptProviderConfig {
+  mode: "dept"
+  baseUrl?: string
+  deptId?: string
+  apiKey?: string
+}
+
+export type WikiProviderConfig = LocalProviderConfig | CloudProviderConfig | DeptProviderConfig
 
 export async function createWikiProvider(config: WikiProviderConfig): Promise<WikiProvider> {
   if (config.mode === "local") {
@@ -23,6 +30,10 @@ export async function createWikiProvider(config: WikiProviderConfig): Promise<Wi
       throw new Error("local mode requires projectPath")
     }
     return createWikiService(config.projectPath)
+  }
+
+  if (config.mode === "dept") {
+    return createDeptWikiProvider(config)
   }
 
   return createCloudWikiProvider(config)
@@ -68,6 +79,51 @@ function createCloudWikiProvider(config: CloudProviderConfig): WikiProvider {
 
     getOverview: async () => {
       const data = await requestJson<{ content?: string } | string>(`${projectBase}/overview`, apiKey)
+      return typeof data === "string" ? data : data.content ?? ""
+    },
+  }
+}
+
+function createDeptWikiProvider(config: DeptProviderConfig): WikiProvider {
+  const baseUrl = requireSetting(config.baseUrl, "baseUrl").replace(/\/+$/, "")
+  const deptId = requireSetting(config.deptId, "deptId")
+  const apiKey = requireSetting(config.apiKey ?? process.env.LLM_WIKI_API_KEY, "apiKey or LLM_WIKI_API_KEY")
+
+  const deptBase = `${baseUrl}/api/departments/${encodeURIComponent(deptId)}/wiki`
+
+  return {
+    listPages: async () => {
+      const data = await requestJson<{ pages?: CloudPage[] } | CloudPage[]>(
+        `${deptBase}/pages`,
+        apiKey,
+      )
+      const pages = Array.isArray(data) ? data : data.pages ?? []
+      return pages.map((page) => toWikiPage(page, deptId))
+    },
+
+    search: async (query, limit = 10) => {
+      if (!query.trim()) throw new Error("search_wiki query cannot be empty")
+      const data = await requestJson<{ results?: WikiSearchResult[] } | WikiSearchResult[]>(
+        `${deptBase}/search`,
+        apiKey,
+        {
+          method: "POST",
+          body: JSON.stringify({ query, limit }),
+        },
+      )
+      return Array.isArray(data) ? data : data.results ?? []
+    },
+
+    readPage: async (pathOrTitle) => {
+      if (!pathOrTitle.trim()) throw new Error("read_wiki_page path_or_title cannot be empty")
+      const url = new URL(`${deptBase}/pages/read`)
+      url.searchParams.set("path_or_title", pathOrTitle)
+      const page = await requestJson<CloudPage>(url.toString(), apiKey)
+      return toWikiPage(page, deptId)
+    },
+
+    getOverview: async () => {
+      const data = await requestJson<{ content?: string } | string>(`${deptBase}/overview`, apiKey)
       return typeof data === "string" ? data : data.content ?? ""
     },
   }
