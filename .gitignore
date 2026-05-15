@@ -23,7 +23,7 @@ artifacts/
 .env.deploy
 
 # Internal docs (not shipped)
-docs/
+docs/*
 !docs/superpowers/
 AGENTS.md
 
