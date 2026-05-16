@@ -31,8 +31,16 @@ services:
       InitialAdmin__Email: "${INITIAL_ADMIN_EMAIL:-}"
       InitialAdmin__Password: "${INITIAL_ADMIN_PASSWORD:-}"
       InitialAdmin__DisplayName: "${INITIAL_ADMIN_NAME:-Admin}"
+      DataProtection__KeysPath: /data/keys
     volumes:
       - "${WIKI_ROOT_PATH:-./data/wiki}:${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
+      - dp_keys:/data/keys
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5200/api/health/ingest-worker"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       qdrant:
         condition: service_started
@@ -68,3 +76,4 @@ services:
 volumes:
   qdrant_storage:
   pgdata:
+  dp_keys:
