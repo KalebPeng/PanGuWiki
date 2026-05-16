@@ -1,5 +1,6 @@
 using LlmWiki.Api.Hubs;
 using LlmWiki.Api.Infrastructure;
+using LlmWiki.Api.Infrastructure.IngestWorker;
 using LlmWiki.Api.Modules.Identity;
 using LlmWiki.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -93,6 +94,8 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new System.IO.DirectoryInfo(keysPath));
 
 builder.Services.AddSingleton<LlmConfigService>();
+builder.Services.AddSingleton<IngestEventBroadcaster>();
+builder.Services.AddSingleton<SseTokenService>();
 
 var app = builder.Build();
 
