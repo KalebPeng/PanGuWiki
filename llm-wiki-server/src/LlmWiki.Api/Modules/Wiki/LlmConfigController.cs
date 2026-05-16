@@ -53,17 +53,25 @@ public class LlmConfigController(
     public async Task<IActionResult> UpsertMine([FromBody] UpsertLlmConfigRequest req)
     {
         if (!currentUser.IsAuthenticated) return Unauthorized();
-        // Deactivate existing config before creating new one (unique index constraint)
-        await db.LlmConfigs
+        // Preserve existing encrypted key if the caller didn't supply a new one
+        var existing = await db.LlmConfigs
             .Where(c => c.UserId == currentUser.UserId && c.IsActive)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, false));
+            .FirstOrDefaultAsync();
+        var preservedKey = string.IsNullOrEmpty(req.ApiKey)
+            ? (existing?.EncryptedApiKey ?? "")
+            : configService.EncryptIfNotEmpty(req.ApiKey);
+
+        if (existing is not null)
+            await db.LlmConfigs
+                .Where(c => c.UserId == currentUser.UserId && c.IsActive)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, false));
 
         var config = new LlmConfig
         {
             UserId = currentUser.UserId,
             Provider = req.Provider,
             Endpoint = req.Endpoint,
-            EncryptedApiKey = configService.EncryptIfNotEmpty(req.ApiKey),
+            EncryptedApiKey = preservedKey,
             Model = req.Model,
             ApiMode = req.ApiMode,
             MaxContextSize = req.MaxContextSize,
@@ -90,16 +98,24 @@ public class LlmConfigController(
     [RequireDeptRole]
     public async Task<IActionResult> UpsertDept(Guid deptId, [FromBody] UpsertLlmConfigRequest req)
     {
-        await db.LlmConfigs
+        var existing = await db.LlmConfigs
             .Where(c => c.DepartmentId == deptId && c.IsActive)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, false));
+            .FirstOrDefaultAsync();
+        var preservedKey = string.IsNullOrEmpty(req.ApiKey)
+            ? (existing?.EncryptedApiKey ?? "")
+            : configService.EncryptIfNotEmpty(req.ApiKey);
+
+        if (existing is not null)
+            await db.LlmConfigs
+                .Where(c => c.DepartmentId == deptId && c.IsActive)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, false));
 
         var config = new LlmConfig
         {
             DepartmentId = deptId,
             Provider = req.Provider,
             Endpoint = req.Endpoint,
-            EncryptedApiKey = configService.EncryptIfNotEmpty(req.ApiKey),
+            EncryptedApiKey = preservedKey,
             Model = req.Model,
             ApiMode = req.ApiMode,
             MaxContextSize = req.MaxContextSize,

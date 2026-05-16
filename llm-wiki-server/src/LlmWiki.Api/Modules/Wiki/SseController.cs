@@ -23,8 +23,8 @@ public class SseController(
     public IActionResult IssueToken(Guid deptId)
     {
         if (!currentUser.IsAuthenticated) return Unauthorized();
-        var token = tokenService.Issue(currentUser.UserId, deptId);
-        return Ok(new { token, expiresAt = DateTimeOffset.UtcNow.AddMinutes(10) });
+        var (token, expiresAt) = tokenService.Issue(currentUser.UserId, deptId);
+        return Ok(new { token, expiresAt });
     }
 
     /// <summary>GET /api/departments/{deptId}/events?token=...&amp;lastEventId=...</summary>

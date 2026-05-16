@@ -28,7 +28,8 @@ public record IngestTaskResponse(
     DateTime QueuedAt,
     DateTime? StartedAt,
     DateTime? CompletedAt,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? ProgressDetail);
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,8 @@ public class IngestTaskController(AppDbContext db, ICurrentUser currentUser, IIn
         t.QueuedAt,
         t.StartedAt,
         t.CompletedAt,
-        t.ErrorMessage);
+        t.ErrorMessage,
+        t.ProgressDetail);
 
     /// <summary>POST api/departments/{deptId}/ingest-tasks</summary>
     [HttpPost]

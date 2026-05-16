@@ -99,7 +99,8 @@ builder.Services.AddSingleton<IngestEventBroadcaster>();
 builder.Services.AddSingleton<SseTokenService>();
 
 // Ingest Worker
-builder.Services.AddHttpClient<ILlmClient, LlmHttpClient>();
+builder.Services.AddHttpClient<ILlmClient, LlmHttpClient>(c =>
+    c.Timeout = TimeSpan.FromMinutes(10));
 builder.Services.AddScoped<IngestPipelineService>();
 builder.Services.AddSingleton<IngestWorkerService>();
 builder.Services.AddSingleton<IIngestQueue>(sp => sp.GetRequiredService<IngestWorkerService>());

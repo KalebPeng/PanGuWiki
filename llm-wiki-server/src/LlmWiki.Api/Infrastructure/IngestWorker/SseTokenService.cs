@@ -11,7 +11,7 @@ public class SseTokenService
     private readonly ConcurrentDictionary<string, SseTokenInfo> _tokens = new();
     private readonly TimeSpan _ttl = TimeSpan.FromMinutes(10);
 
-    public string Issue(Guid userId, Guid deptId)
+    public (string Token, DateTimeOffset ExpiresAt) Issue(Guid userId, Guid deptId)
     {
         // 清理过期 token（机会性清理）
         var now = DateTimeOffset.UtcNow;
@@ -20,8 +20,9 @@ public class SseTokenService
 
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        _tokens[token] = new SseTokenInfo(userId, deptId, now.Add(_ttl));
-        return token;
+        var expiresAt = now.Add(_ttl);
+        _tokens[token] = new SseTokenInfo(userId, deptId, expiresAt);
+        return (token, expiresAt);
     }
 
     public SseTokenInfo? Validate(string token, Guid deptId)
