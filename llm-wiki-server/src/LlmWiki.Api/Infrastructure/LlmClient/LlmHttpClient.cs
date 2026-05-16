@@ -16,8 +16,9 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
     {
         if (config.Provider == "anthropic")
         {
-            // Anthropic branch added in Task 5
-            throw new NotSupportedException($"Anthropic provider not yet implemented — will be added in Task 5");
+            await foreach (var token in StreamAnthropicAsync(config, messages, options, ct))
+                yield return token;
+            yield break;
         }
 
         await foreach (var token in StreamOpenAiCompatAsync(config, messages, options, ct))
@@ -79,6 +80,93 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
                 .TryGetProperty("content", out var content)
                     ? content.GetString()
                     : null;
+        }
+        catch { return null; }
+    }
+
+    private async IAsyncEnumerable<string> StreamAnthropicAsync(
+        LlmConfig config,
+        IEnumerable<ChatMessage> messages,
+        LlmOptions options,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var url = AnthropicUrlBuilder.Build(config.Endpoint);
+        var msgList = messages.ToList();
+        var system = string.Join("\n", msgList
+            .Where(m => m.Role == "system")
+            .Select(m => m.Content));
+        var conversation = msgList
+            .Where(m => m.Role != "system")
+            .Select(m => new { role = m.Role, content = m.Content })
+            .ToList();
+
+        var body = new Dictionary<string, object>
+        {
+            ["model"] = config.Model,
+            ["messages"] = conversation,
+            ["stream"] = true,
+            ["max_tokens"] = options.MaxTokens,
+            ["temperature"] = (double)options.Temperature,
+        };
+        if (!string.IsNullOrEmpty(system)) body["system"] = system;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        // MiniMax/DashScope proxies expect Bearer; standard Anthropic expects x-api-key
+        var requiresBearer = url.Contains("minimax", StringComparison.OrdinalIgnoreCase)
+                          || url.Contains("dashscope", StringComparison.OrdinalIgnoreCase);
+        if (requiresBearer)
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", config.EncryptedApiKey);
+        else
+        {
+            request.Headers.Add("x-api-key", config.EncryptedApiKey);
+            request.Headers.Add("anthropic-version", "2023-06-01");
+        }
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var response = await http.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream);
+
+        string? currentEvent = null;
+        while (!reader.EndOfStream && !ct.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (line is null) break;
+
+            if (line.StartsWith("event:"))
+            {
+                currentEvent = line[6..].Trim();
+                if (currentEvent == "message_stop") yield break;
+                continue;
+            }
+
+            if (line.StartsWith("data:") && currentEvent == "content_block_delta")
+            {
+                var token = ParseAnthropicDeltaLine(line);
+                if (token != null) yield return token;
+            }
+        }
+    }
+
+    internal static string? ParseAnthropicDeltaLine(string line)
+    {
+        if (!line.StartsWith("data: ")) return null;
+        var data = line[6..].Trim();
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("delta", out var delta) &&
+                delta.TryGetProperty("type", out var type) &&
+                type.GetString() == "text_delta" &&
+                delta.TryGetProperty("text", out var text))
+                return text.GetString();
+            return null;
         }
         catch { return null; }
     }
