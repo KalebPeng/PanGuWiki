@@ -1,4 +1,5 @@
 using LlmWiki.Api.Infrastructure;
+using LlmWiki.Api.Infrastructure.IngestWorker;
 using LlmWiki.Api.Modules.Wiki.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -34,7 +35,7 @@ public record IngestTaskResponse(
 [ApiController]
 [Route("api/departments/{deptId:guid}/ingest-tasks")]
 [Authorize]
-public class IngestTaskController(AppDbContext db, ICurrentUser currentUser) : ControllerBase
+public class IngestTaskController(AppDbContext db, ICurrentUser currentUser, IIngestQueue ingestQueue) : ControllerBase
 {
     private static IngestTaskResponse ToResponse(IngestTask t) => new(
         t.Id,
@@ -65,6 +66,7 @@ public class IngestTaskController(AppDbContext db, ICurrentUser currentUser) : C
 
         db.IngestTasks.Add(task);
         await db.SaveChangesAsync();
+        ingestQueue.Signal();
 
         return CreatedAtAction(nameof(List), new { deptId }, ToResponse(task));
     }

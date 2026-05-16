@@ -1,6 +1,7 @@
 using LlmWiki.Api.Hubs;
 using LlmWiki.Api.Infrastructure;
 using LlmWiki.Api.Infrastructure.IngestWorker;
+using LlmWiki.Api.Infrastructure.LlmClient;
 using LlmWiki.Api.Modules.Identity;
 using LlmWiki.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -97,6 +98,13 @@ builder.Services.AddSingleton<LlmConfigService>();
 builder.Services.AddSingleton<IngestEventBroadcaster>();
 builder.Services.AddSingleton<SseTokenService>();
 
+// Ingest Worker
+builder.Services.AddHttpClient<ILlmClient, LlmHttpClient>();
+builder.Services.AddScoped<IngestPipelineService>();
+builder.Services.AddSingleton<IngestWorkerService>();
+builder.Services.AddSingleton<IIngestQueue>(sp => sp.GetRequiredService<IngestWorkerService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<IngestWorkerService>());
+
 var app = builder.Build();
 
 // 启动时自动执行 EF Core 迁移（Docker 部署时确保数据库表最新）
@@ -141,6 +149,14 @@ app.UseMiddleware<TenantMiddleware>();
 app.UseWebSockets();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapGet("/api/health/ingest-worker", (IngestWorkerService worker) =>
+    Results.Ok(new
+    {
+        workerAlive = worker.IsAlive,
+        lastCompletedAt = worker.LastCompletedAt,
+        currentTaskId = worker.CurrentTaskId,
+    }));
 
 app.Map("/ws/claude", async context =>
 {
