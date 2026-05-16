@@ -12,36 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 namespace LlmWiki.Api.Tests.Integration;
 
 // ---------------------------------------------------------------------------
-// Custom IModelCustomizer — strips PostgreSQL SQL defaults for SQLite
-// ---------------------------------------------------------------------------
-
-/// <summary>
-/// Wraps the default EF Core <see cref="IModelCustomizer"/> and additionally
-/// removes any <c>HasDefaultValueSql</c> annotations (e.g. <c>gen_random_uuid()</c>,
-/// <c>now()</c>) that are only valid for PostgreSQL.  When no DB default is
-/// present, EF Core uses the CLR property value (Guid.NewGuid(), DateTime.UtcNow)
-/// set by the application code, so no data integrity is lost.
-/// </summary>
-internal sealed class SqliteModelCustomizer(ModelCustomizerDependencies dependencies)
-    : ModelCustomizer(dependencies)
-{
-    public override void Customize(ModelBuilder modelBuilder, DbContext context)
-    {
-        base.Customize(modelBuilder, context);
-
-        // Strip PostgreSQL SQL-function defaults that SQLite cannot evaluate
-        foreach (var entity in modelBuilder.Model.GetEntityTypes())
-        {
-            foreach (var prop in entity.GetProperties())
-            {
-                if (prop.GetDefaultValueSql() is not null)
-                    prop.SetDefaultValueSql(null);
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Custom WebApplicationFactory
 // ---------------------------------------------------------------------------
 
@@ -73,7 +43,8 @@ public sealed class MultiTenantWebFactory : WebApplicationFactory<Program>, IAsy
         builder.UseSetting("Jwt:Issuer", "llmwiki");
         builder.UseSetting("Jwt:Audience", "llmwiki");
         builder.UseSetting("WikiProjects:RootPath", Path.GetTempPath());
-        builder.UseEnvironment("Development"); // skips production Jwt secret guard
+        builder.UseSetting("DataProtection:KeysPath", Path.Combine(Path.GetTempPath(), "llmwiki-test-keys"));
+        builder.UseEnvironment("Testing"); // skips production Jwt secret guard; uses EnsureCreated instead of Migrate
 
         // ── Replace PostgreSQL DbContext with SQLite in-memory ────────────
         builder.ConfigureServices(services =>
@@ -91,7 +62,7 @@ public sealed class MultiTenantWebFactory : WebApplicationFactory<Program>, IAsy
                 options.UseSqlite(_keepAlive);
                 options.UseSnakeCaseNamingConvention();
                 // Replace the default IModelCustomizer with our SQLite-compatible one
-                options.ReplaceService<IModelCustomizer, SqliteModelCustomizer>();
+                options.ReplaceService<IModelCustomizer, TestSqliteModelCustomizer>();
             });
         });
     }

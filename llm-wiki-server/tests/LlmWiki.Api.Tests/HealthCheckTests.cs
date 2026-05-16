@@ -1,9 +1,7 @@
-using Microsoft.AspNetCore.Mvc.Testing;
-
 namespace LlmWiki.Api.Tests;
 
-public class HealthCheckTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public class HealthCheckTests(TestWebApplicationFactory factory)
+    : IClassFixture<TestWebApplicationFactory>
 {
     [Fact]
     public async Task HealthEndpoint_Returns200()

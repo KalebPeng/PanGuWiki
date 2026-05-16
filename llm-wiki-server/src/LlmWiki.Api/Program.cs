@@ -111,7 +111,10 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    if (app.Environment.IsEnvironment("Testing"))
+        db.Database.EnsureCreated();
+    else
+        db.Database.Migrate();
 
     // 若数据库中尚无超级管理员，且配置了 INITIAL_ADMIN_EMAIL / INITIAL_ADMIN_PASSWORD
     // 则自动创建初始超管账号（仅在第一次部署时生效）
