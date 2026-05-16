@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { flushMicrotasks } from "@/test-helpers/deferred"
 
-// Mock autoIngest so tests control success/failure timing.
+// NOTE: processNext is a no-op on the frontend — ingest execution moved to
+// the backend IngestWorkerService. These mocks are kept so cleanupWrittenFiles
+// tests still work correctly; the autoIngest mock is no longer called during
+// normal queue operation.
+
+// Mock autoIngest (no longer called by processNext, kept for legacy compat).
 vi.mock("./ingest", () => ({
   autoIngest: vi.fn(),
 }))
@@ -14,8 +19,7 @@ vi.mock("@/commands/fs", () => ({
   deleteFile: vi.fn(),
 }))
 
-// Mock sweep-reviews since the queue drain dynamically imports it. The
-// sweep itself has its own test file; here we just confirm it's triggered.
+// Mock sweep-reviews (no longer triggered by the frontend queue drain).
 vi.mock("./sweep-reviews", () => ({
   sweepResolvedReviews: vi.fn().mockResolvedValue(0),
 }))
@@ -63,15 +67,10 @@ import {
   getQueueSummary,
   restoreQueue,
 } from "./ingest-queue"
-import { autoIngest } from "./ingest"
 import { readFile, writeFile } from "@/commands/fs"
-import { sweepResolvedReviews } from "./sweep-reviews"
-import { useWikiStore } from "@/stores/wiki-store"
 
-const mockAutoIngest = vi.mocked(autoIngest)
 const mockReadFile = vi.mocked(readFile)
 const mockWriteFile = vi.mocked(writeFile)
-const mockSweep = vi.mocked(sweepResolvedReviews)
 
 /** Simulate the app having opened `TEST_ID` at `TEST_PATH` so the queue
  *  module's `currentProjectId` / `currentProjectPath` are set. Most
@@ -83,47 +82,29 @@ async function activateProject(id: string = TEST_ID): Promise<void> {
 
 beforeEach(async () => {
   clearQueueState()
-  mockAutoIngest.mockReset()
   mockReadFile.mockReset()
   mockWriteFile.mockReset()
-  mockSweep.mockReset()
-  mockSweep.mockResolvedValue(0)
   removePageEmbeddingMock.mockReset()
 
   // Default: persisted queue file doesn't exist
   mockReadFile.mockRejectedValue(new Error("ENOENT"))
   mockWriteFile.mockResolvedValue(undefined as unknown as void)
 
-  // Default: a valid LLM config so processNext doesn't reject.
-  useWikiStore.getState().setLlmConfig({
-    provider: "openai",
-    apiKey: "test-key",
-    model: "gpt-4",
-    ollamaUrl: "",
-    customEndpoint: "",
-    maxContextSize: 128000,
-  })
-
   await activateProject()
 })
 
 describe("ingest-queue — enqueue & basic processing", () => {
-  it("enqueueIngest adds a pending task and triggers processing", async () => {
-    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
-
+  it("enqueueIngest adds a pending task (execution is handled by backend)", async () => {
     const id = await enqueueIngest(TEST_ID, "raw/sources/a.md")
     expect(id).toMatch(/^ingest-/)
 
-    // Let the async processing loop run
+    // processNext is a no-op: task remains pending (backend worker processes it)
     await flushMicrotasks(10)
-
-    // Task should have been processed and removed
-    expect(mockAutoIngest).toHaveBeenCalledOnce()
-    expect(getQueue()).toHaveLength(0)
+    expect(getQueue()).toHaveLength(1)
+    expect(getQueue()[0].status).toBe("pending")
   })
 
   it("persists queue to disk on enqueue", async () => {
-    mockAutoIngest.mockImplementation(() => new Promise(() => {})) // never resolves
     await enqueueIngest(TEST_ID, "a.md")
     await flushMicrotasks(2)
 
@@ -134,97 +115,50 @@ describe("ingest-queue — enqueue & basic processing", () => {
     expect(queuePath).toContain(".llm-wiki/ingest-queue.json")
   })
 
-  it("enqueueBatch queues multiple tasks and processes them serially", async () => {
-    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
-
+  it("enqueueBatch queues multiple tasks (execution is handled by backend)", async () => {
     await enqueueBatch(TEST_ID, [
       { sourcePath: "a.md", folderContext: "" },
       { sourcePath: "b.md", folderContext: "" },
       { sourcePath: "c.md", folderContext: "" },
     ])
 
-    await flushMicrotasks(50)
+    await flushMicrotasks(10)
 
-    expect(mockAutoIngest).toHaveBeenCalledTimes(3)
-    expect(getQueue()).toHaveLength(0)
+    // Tasks remain pending — processNext is a no-op on the frontend
+    expect(getQueue()).toHaveLength(3)
+    for (const t of getQueue()) expect(t.status).toBe("pending")
   })
 })
 
 describe("ingest-queue — retry & failure", () => {
-  it("retries a failing task up to MAX_RETRIES=3 then marks failed", async () => {
-    mockAutoIngest.mockRejectedValue(new Error("LLM error"))
-
+  it("retryTask resets a failed task to pending (backend will retry)", async () => {
+    // Manually enqueue and force to failed state to simulate a backend-reported failure
     await enqueueIngest(TEST_ID, "bad.md")
-    await flushMicrotasks(30)
+    const task = getQueue()[0]
+    ;(task as { status: string }).status = "failed"
+    ;(task as { error: string | null }).error = "LLM error"
+    ;(task as { retryCount: number }).retryCount = 3
 
-    expect(mockAutoIngest).toHaveBeenCalledTimes(3)
-    const queue = getQueue()
-    expect(queue).toHaveLength(1)
-    expect(queue[0].status).toBe("failed")
-    expect(queue[0].error).toContain("LLM error")
-    expect(queue[0].retryCount).toBe(3)
-  })
-
-  it("succeeds on retry after transient failure", async () => {
-    mockAutoIngest
-      .mockRejectedValueOnce(new Error("transient"))
-      .mockRejectedValueOnce(new Error("transient"))
-      .mockResolvedValueOnce(["wiki/sources/foo.md"])
-
-    await enqueueIngest(TEST_ID, "flaky.md")
-    await flushMicrotasks(30)
-
-    expect(mockAutoIngest).toHaveBeenCalledTimes(3)
-    expect(getQueue()).toHaveLength(0)
-  })
-
-  it("treats autoIngest resolving to an empty array as a failure (not silent success)", async () => {
-    // Regression: a webview refresh could abort the LLM fetch, making
-    // streamChat's error path fire, which historically caused autoIngest
-    // to `return []` — processNext then removed the task from the queue
-    // as if it had succeeded. The safety net in processNext now rejects
-    // zero-output completions and keeps the task around to retry.
-    mockAutoIngest.mockResolvedValue([])
-
-    await enqueueIngest(TEST_ID, "refresh-abort.md")
-    await flushMicrotasks(30)
-
-    // Three retries were attempted — the task didn't just vanish.
-    expect(mockAutoIngest).toHaveBeenCalledTimes(3)
-    const queue = getQueue()
-    expect(queue).toHaveLength(1)
-    expect(queue[0].status).toBe("failed")
-    expect(queue[0].error).toContain("no output files")
-    expect(queue[0].retryCount).toBe(3)
-  })
-
-  it("retryTask resets a failed task to pending and reprocesses it", async () => {
-    mockAutoIngest.mockRejectedValue(new Error("always fails"))
-
-    await enqueueIngest(TEST_ID, "x.md")
-    await flushMicrotasks(20)
     expect(getQueue()[0].status).toBe("failed")
 
-    const taskId = getQueue()[0].id
-    mockAutoIngest.mockResolvedValueOnce(["wiki/sources/foo.md"])
-    await retryTask(taskId)
-    await flushMicrotasks(10)
+    await retryTask(task.id)
+    await flushMicrotasks(5)
 
-    expect(getQueue()).toHaveLength(0)
+    // retryTask sets status back to pending; backend picks it up
+    expect(getQueue()[0].status).toBe("pending")
+    expect(getQueue()[0].error).toBeNull()
   })
 })
 
 describe("ingest-queue — cancel", () => {
-  it("cancelTask removes a pending task without calling autoIngest", async () => {
-    mockAutoIngest.mockImplementation(() => new Promise(() => {})) // block first task
-
+  it("cancelTask removes a pending task from the queue", async () => {
     await enqueueBatch(TEST_ID, [
       { sourcePath: "first.md", folderContext: "" },
       { sourcePath: "second.md", folderContext: "" },
     ])
     await flushMicrotasks(2)
 
-    // first.md is processing; cancel second.md (still pending)
+    // Both tasks remain pending (no browser-side processing)
     const queue = getQueue()
     const second = queue.find((t) => t.sourcePath === "second.md")!
     await cancelTask(second.id)
@@ -236,9 +170,6 @@ describe("ingest-queue — cancel", () => {
 
 describe("ingest-queue — cancelAllTasks", () => {
   it("drops all pending and processing tasks but keeps failed ones", async () => {
-    // Block the processing task so it doesn't finish on its own.
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
-
     await enqueueBatch(TEST_ID, [
       { sourcePath: "a.md", folderContext: "" },
       { sourcePath: "b.md", folderContext: "" },
@@ -252,7 +183,7 @@ describe("ingest-queue — cancelAllTasks", () => {
 
     const removed = await cancelAllTasks()
 
-    expect(removed).toBe(2) // a (processing) + b (pending) gone
+    expect(removed).toBe(2) // a (pending) + b (pending) gone
     expect(getQueue()).toHaveLength(1)
     expect(getQueue()[0].sourcePath).toBe("c.md")
     expect(getQueue()[0].status).toBe("failed")
@@ -265,7 +196,6 @@ describe("ingest-queue — cancelAllTasks", () => {
   })
 
   it("is safe to call after it has already cleared the queue", async () => {
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
     await enqueueIngest(TEST_ID, "only.md")
     await flushMicrotasks(2)
 
@@ -277,9 +207,9 @@ describe("ingest-queue — cancelAllTasks", () => {
 
 describe("ingest-queue — clearCompletedTasks & summary", () => {
   it("getQueueSummary returns accurate counts", async () => {
-    mockAutoIngest.mockRejectedValue(new Error("fail"))
-    await enqueueIngest(TEST_ID, "fail.md")
-    await flushMicrotasks(20)
+    await enqueueIngest(TEST_ID, "pending.md")
+    // Manually set to failed (simulating backend reporting failure)
+    ;(getQueue()[0] as { status: string }).status = "failed"
 
     const summary = getQueueSummary()
     expect(summary.failed).toBe(1)
@@ -288,9 +218,9 @@ describe("ingest-queue — clearCompletedTasks & summary", () => {
   })
 
   it("clearCompletedTasks drops failed tasks", async () => {
-    mockAutoIngest.mockRejectedValue(new Error("fail"))
     await enqueueIngest(TEST_ID, "f.md")
-    await flushMicrotasks(20)
+    // Manually force to failed
+    ;(getQueue()[0] as { status: string }).status = "failed"
 
     expect(getQueue()).toHaveLength(1)
     await clearCompletedTasks()
@@ -299,45 +229,18 @@ describe("ingest-queue — clearCompletedTasks & summary", () => {
 })
 
 describe("ingest-queue — queue-drain triggers review sweep", () => {
-  it("calls sweepResolvedReviews once after a successful task drains the queue", async () => {
-    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
-
+  it("does NOT trigger sweep on the frontend (execution moved to backend)", async () => {
+    // processNext is a no-op: sweepResolvedReviews is never called from the frontend
     await enqueueIngest(TEST_ID, "ok.md")
     await flushMicrotasks(30)
 
-    expect(mockSweep).toHaveBeenCalledOnce()
-    expect(mockSweep).toHaveBeenCalledWith("/project", expect.any(AbortSignal))
-  })
-
-  it("does NOT trigger sweep when no task has been processed since the last drain", async () => {
-    // No tasks enqueued — processedSinceDrain flag stays false
-    // (We simulate an idle condition by enqueueing, processing, draining once)
-    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
-    await enqueueIngest(TEST_ID, "a.md")
-    await flushMicrotasks(20)
-    expect(mockSweep).toHaveBeenCalledTimes(1)
-
-    // Now the queue is empty. Calling cancelTask on a nonexistent id is a
-    // no-op but internally may call processNext → no drain fire (nothing
-    // was processed since the last drain).
-    await cancelTask("nonexistent")
-    await flushMicrotasks(5)
-    expect(mockSweep).toHaveBeenCalledTimes(1)
-  })
-
-  it("does NOT trigger sweep when all tasks fail (nothing was successfully ingested)", async () => {
-    mockAutoIngest.mockRejectedValue(new Error("always fails"))
-
-    await enqueueIngest(TEST_ID, "bad.md")
-    await flushMicrotasks(30)
-
-    expect(mockSweep).not.toHaveBeenCalled()
+    const { sweepResolvedReviews } = await import("./sweep-reviews")
+    expect(vi.mocked(sweepResolvedReviews)).not.toHaveBeenCalled()
   })
 })
 
 describe("ingest-queue — clearQueueState", () => {
-  it("clears pending tasks and resets processing flag", async () => {
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
+  it("clears pending tasks from memory", async () => {
     await enqueueBatch(TEST_ID, [
       { sourcePath: "a.md", folderContext: "" },
       { sourcePath: "b.md", folderContext: "" },
@@ -349,24 +252,11 @@ describe("ingest-queue — clearQueueState", () => {
     clearQueueState()
     expect(getQueue()).toHaveLength(0)
   })
-
-  it("processedSinceDrain flag resets so a post-switch no-op won't trigger sweep", async () => {
-    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
-    await enqueueIngest(TEST_ID, "x.md")
-    await flushMicrotasks(20)
-    mockSweep.mockClear()
-
-    clearQueueState()
-    // Simulate new drain trigger on an empty queue — no sweep.
-    await flushMicrotasks(5)
-    expect(mockSweep).not.toHaveBeenCalled()
-  })
 })
 
 describe("ingest-queue — restoreQueue", () => {
   it("resets in-memory state before loading, preventing cross-project bleed", async () => {
     // Seed in-memory state from project A
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
     await enqueueIngest(TEST_ID, "a.md")
     await flushMicrotasks(2)
     expect(getQueue().length).toBeGreaterThan(0)
@@ -390,18 +280,14 @@ describe("ingest-queue — restoreQueue", () => {
       },
     ]
     mockReadFile.mockResolvedValue(JSON.stringify(saved))
-    // Prevent the reprocessing kickoff from completing forever:
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
 
     await restoreQueue(TEST_ID, TEST_PATH)
     await flushMicrotasks(2)
 
     const queue = getQueue()
     expect(queue).toHaveLength(1)
-    // After restore + kick-off of processNext, the task transitions back to
-    // "processing" — but the RESTORED-from-disk value was "pending". We can
-    // still assert it's not "failed" / "done".
-    expect(["pending", "processing"]).toContain(queue[0].status)
+    // processNext is a no-op: task stays as pending after restore
+    expect(queue[0].status).toBe("pending")
   })
 
   it("leaves 'failed' tasks as failed on restore", async () => {
@@ -439,7 +325,6 @@ describe("ingest-queue — restoreQueue", () => {
       },
     ]
     mockReadFile.mockResolvedValue(JSON.stringify(savedLegacy))
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
 
     await restoreQueue(TEST_ID, TEST_PATH)
     const queue = getQueue()
@@ -451,8 +336,7 @@ describe("ingest-queue — restoreQueue", () => {
 import { pauseQueue } from "./ingest-queue"
 
 describe("ingest-queue — pauseQueue & switch-project survival", () => {
-  it("pauseQueue persists pending/processing tasks to the paused project's disk", async () => {
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
+  it("pauseQueue persists pending tasks to the paused project's disk", async () => {
     await enqueueBatch(TEST_ID, [
       { sourcePath: "a.md", folderContext: "" },
       { sourcePath: "b.md", folderContext: "" },
@@ -462,8 +346,7 @@ describe("ingest-queue — pauseQueue & switch-project survival", () => {
 
     await pauseQueue()
 
-    // The last write call should contain BOTH tasks, with the processing
-    // one demoted back to pending for resume-on-return.
+    // The last write call should contain BOTH pending tasks.
     const writes = mockWriteFile.mock.calls
     expect(writes.length).toBeGreaterThan(0)
     const [pathArg, contentArg] = writes[writes.length - 1]
@@ -474,7 +357,6 @@ describe("ingest-queue — pauseQueue & switch-project survival", () => {
   })
 
   it("pauseQueue then restoreQueue of SAME project brings tasks back", async () => {
-    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
     await enqueueIngest(TEST_ID, "first.md")
     await flushMicrotasks(2)
 
@@ -494,39 +376,20 @@ describe("ingest-queue — pauseQueue & switch-project survival", () => {
     expect(queue[0].sourcePath).toBe("first.md")
   })
 
-  it("processNext bails if currentProjectId changes mid-ingest (no cross-project writes)", async () => {
-    // Block autoIngest so we can pause mid-flight. Then resolve it
-    // AFTER pauseQueue completes to simulate the delayed return.
-    let resolveAutoIngest: (files: string[]) => void = () => {}
-    mockAutoIngest.mockImplementation(
-      () => new Promise<string[]>((resolve) => { resolveAutoIngest = resolve }),
-    )
-
+  it("switch project: restored B queue is empty and uncontaminated by A's tasks", async () => {
     await enqueueIngest(TEST_ID, "long-running.md")
     await flushMicrotasks(2)
-    // Ensure the task is processing
-    expect(getQueue().find((t) => t.status === "processing")).toBeTruthy()
 
-    // Switch projects: pause then restore a different one.
+    // Switch projects: pause A then restore B.
     mockWriteFile.mockClear()
     await pauseQueue()
     await restoreQueue(TEST_ID_B, TEST_PATH_B)
 
-    // Now the orphaned autoIngest for TEST_ID returns late.
-    resolveAutoIngest(["wiki/sources/foo.md"])
-    await flushMicrotasks(10)
+    // B's queue should be empty — no tasks from A leaked in.
+    expect(getQueue()).toHaveLength(0)
 
-    // The orphan must not have written to the ACTIVE (B) project's file.
-    // Inspect every post-pause write — the path should never contain the
-    // project-B queue file getting mutated by the orphan's filter result.
-    const writes = mockWriteFile.mock.calls
-    // Confirm no write touched project B's queue from orphan completion.
-    // (The only writes should be pauseQueue's flush to /project and
-    // restoreQueue's initial save of B's empty queue.)
-    const bWrites = writes.filter(([p]) => String(p).includes("/project-b/"))
-    // B's queue should only have been written once (during restore), and
-    // that write should show an empty array — not the orphan's filtered
-    // result leaking in.
+    // Confirm B's queue file was written as empty array.
+    const bWrites = mockWriteFile.mock.calls.filter(([p]) => String(p).includes("/project-b/"))
     for (const [, content] of bWrites) {
       const parsed = JSON.parse(String(content))
       expect(parsed).toEqual([])

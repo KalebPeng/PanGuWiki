@@ -1,9 +1,5 @@
 import { readFile, writeFile } from "@/commands/fs"
-import { autoIngest } from "./ingest"
-import { useWikiStore } from "@/stores/wiki-store"
 import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
-import { getProjectPathById } from "@/lib/project-identity"
-import { hasUsableLlm } from "@/lib/has-usable-llm"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -26,10 +22,7 @@ export interface IngestTask {
 // ── State ─────────────────────────────────────────────────────────────────
 
 let queue: IngestTask[] = []
-let processing = false
-/** UUID of the currently-active project. Used as a stale-context guard
- *  in processNext: if this changes mid-ingest (user switched projects),
- *  the orphaned runner bails instead of writing to the old project. */
+/** UUID of the currently-active project. Used as a stale-context guard. */
 let currentProjectId = ""
 /** Cached filesystem path of the currently-active project. Kept in lock-
  *  step with `currentProjectId` by pauseQueue / restoreQueue so sync
@@ -37,9 +30,6 @@ let currentProjectId = ""
 let currentProjectPath = ""
 let currentAbortController: AbortController | null = null
 let lastWrittenFiles: string[] = []  // track files written by current ingest for cleanup
-// Track whether any task has been processed since the last drain.
-// Prevents the sweep from running on every idle/no-op call.
-let processedSinceDrain = false
 // Abort controller for the review-sweep LLM call so switching projects
 // cancels a long-running judgment instead of burning tokens.
 let sweepAbortController: AbortController | null = null
@@ -239,8 +229,6 @@ export async function cancelTask(taskId: string): Promise<void> {
       console.log(`[Ingest Queue] Cleaned up ${lastWrittenFiles.length} files from cancelled task`)
       lastWrittenFiles = []
     }
-
-    processing = false
   }
 
   queue = queue.filter((t) => t.id !== taskId)
@@ -271,7 +259,6 @@ export async function cancelAllTasks(): Promise<number> {
     currentAbortController.abort()
     currentAbortController = null
   }
-  processing = false
 
   if (lastWrittenFiles.length > 0) {
     await cleanupWrittenFiles(currentProjectPath, lastWrittenFiles)
@@ -320,13 +307,11 @@ export function clearQueueState(): void {
     sweepAbortController.abort()
   }
   queue = []
-  processing = false
   currentProjectId = ""
   currentProjectPath = ""
   currentAbortController = null
   sweepAbortController = null
   lastWrittenFiles = []
-  processedSinceDrain = false
 }
 
 /**
@@ -354,7 +339,6 @@ export async function pauseQueue(): Promise<void> {
     sweepAbortController.abort()
     sweepAbortController = null
   }
-  processing = false
 
   // Revert any in-flight processing task back to pending so when the
   // user returns to this project, the task is re-tried from scratch.
@@ -371,7 +355,6 @@ export async function pauseQueue(): Promise<void> {
   currentProjectId = ""
   currentProjectPath = ""
   lastWrittenFiles = []
-  processedSinceDrain = false
 }
 
 // ── Restore on startup ───────────────────────────────────────────────────
@@ -390,7 +373,6 @@ export async function restoreQueue(
   // Defensive: reset in-memory state (should already be empty via
   // pauseQueue, but clearing again costs nothing).
   queue = []
-  processing = false
   currentAbortController = null
   lastWrittenFiles = []
   currentProjectId = projectId
@@ -432,170 +414,7 @@ export async function restoreQueue(
 
 // ── Processing ────────────────────────────────────────────────────────────
 
-const MAX_RETRIES = 3
-
-async function onQueueDrained(projectId: string, projectPath: string): Promise<void> {
-  if (!processedSinceDrain) return
-  // Stale-context guard — if we switched projects mid-drain, the sweep
-  // would burn tokens analyzing the wrong project.
-  if (currentProjectId !== projectId) return
-  processedSinceDrain = false
-
-  sweepAbortController = new AbortController()
-  const signal = sweepAbortController.signal
-
-  try {
-    const { sweepResolvedReviews } = await import("@/lib/sweep-reviews")
-    await sweepResolvedReviews(projectPath, signal)
-  } catch (err) {
-    console.error("[Ingest Queue] Failed to load sweep-reviews:", err)
-  } finally {
-    if (sweepAbortController && sweepAbortController.signal === signal) {
-      sweepAbortController = null
-    }
-  }
-}
-
-async function processNext(projectId: string): Promise<void> {
-  if (processing) return
-  // Stale-context guard: processNext may be invoked by an orphaned
-  // recursion from a previous project. If we're no longer active, bail.
-  if (currentProjectId !== projectId) return
-
-  const next = queue.find((t) => t.projectId === projectId && t.status === "pending")
-  if (!next) {
-    // Queue drained — trigger review cleanup (auto-resolve stale items)
-    const pathAtDrain = currentProjectPath
-    onQueueDrained(projectId, pathAtDrain).catch((err) =>
-      console.error("[Ingest Queue] sweep failed:", err)
-    )
-    return
-  }
-
-  // Look up the project's current filesystem path from the registry —
-  // it may have moved since the task was enqueued. If the project isn't
-  // in the registry (was deleted or never registered), mark as failed.
-  const registryPath = await getProjectPathById(projectId)
-  const pp = registryPath ? normalizePath(registryPath) : ""
-
-  // Check we're still active after the registry await.
-  if (currentProjectId !== projectId) return
-
-  if (!pp) {
-    next.status = "failed"
-    next.error = "Project not found in registry (was it deleted?)"
-    await saveQueue(currentProjectPath)
-    processNext(projectId)
-    return
-  }
-
-  processing = true
-  next.status = "processing"
-  await saveQueue(pp)
-  if (currentProjectId !== projectId) return
-
-  // PATCH status = running
-  if (next.dbTaskId && next.deptId) {
-    ;(async () => {
-      try {
-        const { httpPatch } = await import("@/api/dotnet-client")
-        await httpPatch(`/api/departments/${next.deptId}/ingest-tasks/${next.dbTaskId}`, {
-          status: "running",
-          started_at: new Date().toISOString(),
-        })
-      } catch { /* 静默失败 */ }
-    })()
-  }
-
-  const llmConfig = useWikiStore.getState().llmConfig
-
-  // Check if LLM is configured
-  if (!hasUsableLlm(llmConfig)) {
-    next.status = "failed"
-    next.error = "LLM not configured — set API key in Settings"
-    processing = false
-    await saveQueue(pp)
-    processNext(projectId)
-    return
-  }
-
-  const fullSourcePath = isAbsolutePath(next.sourcePath)
-    ? normalizePath(next.sourcePath)
-    : `${pp}/${next.sourcePath}`
-
-  console.log(`[Ingest Queue] Processing: ${next.sourcePath} (${queue.filter((t) => t.projectId === projectId && t.status === "pending").length} remaining)`)
-
-  currentAbortController = new AbortController()
-  lastWrittenFiles = []
-
-  try {
-    const writtenFiles = await autoIngest(pp, fullSourcePath, llmConfig, currentAbortController.signal, next.folderContext)
-    // Stale-context guard: project switched during the long LLM call.
-    // Bail without mutating queue or writing to disk — pauseQueue has
-    // already persisted the correct state to the old project's file,
-    // and the new project's queue must not be touched by this orphan.
-    if (currentProjectId !== projectId) return
-    lastWrittenFiles = writtenFiles
-
-    // Safety net: autoIngest resolving with zero files means nothing
-    // was really ingested (e.g. abort during webview refresh where the
-    // historical `return []` error path masqueraded as success). Treat
-    // as failure so the task stays in the queue and retries.
-    if (writtenFiles.length === 0) {
-      throw new Error("Ingest produced no output files")
-    }
-
-    // Success: remove from queue
-    currentAbortController = null
-    lastWrittenFiles = []
-    queue = queue.filter((t) => t.id !== next.id)
-    processedSinceDrain = true
-    await saveQueue(pp)
-
-    if (next.dbTaskId && next.deptId) {
-      ;(async () => {
-        try {
-          const { httpPatch } = await import("@/api/dotnet-client")
-          await httpPatch(`/api/departments/${next.deptId}/ingest-tasks/${next.dbTaskId}`, {
-            status: "done",
-            wiki_pages_count: writtenFiles.length,
-            completed_at: new Date().toISOString(),
-          })
-        } catch { /* 静默失败 */ }
-      })()
-    }
-
-    console.log(`[Ingest Queue] Done: ${next.sourcePath}`)
-  } catch (err) {
-    if (currentProjectId !== projectId) return
-    currentAbortController = null
-    const message = err instanceof Error ? err.message : String(err)
-    next.retryCount++
-    next.error = message
-
-    if (next.retryCount >= MAX_RETRIES) {
-      next.status = "failed"
-      console.log(`[Ingest Queue] Failed (${next.retryCount}x): ${next.sourcePath} — ${message}`)
-      if (next.dbTaskId && next.deptId) {
-        ;(async () => {
-          try {
-            const { httpPatch } = await import("@/api/dotnet-client")
-            await httpPatch(`/api/departments/${next.deptId}/ingest-tasks/${next.dbTaskId}`, {
-              status: "failed",
-              error_message: String(err).slice(0, 500),
-              completed_at: new Date().toISOString(),
-            })
-          } catch { /* 静默失败 */ }
-        })()
-      }
-    } else {
-      next.status = "pending" // will retry
-      console.log(`[Ingest Queue] Error (retry ${next.retryCount}/${MAX_RETRIES}): ${next.sourcePath} — ${message}`)
-    }
-
-    await saveQueue(pp)
-  }
-
-  processing = false
-  processNext(projectId)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function processNext(_projectId: string): Promise<void> {
+  // Execution moved to backend IngestWorkerService — no-op on frontend
 }
