@@ -49,7 +49,13 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
 
         using var response = await http.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"LLM API error {(int)response.StatusCode} from {url}: {errorBody}",
+                null, response.StatusCode);
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
@@ -127,7 +133,13 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
 
         using var response = await http.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"LLM API error {(int)response.StatusCode} from {url}: {errorBody}",
+                null, response.StatusCode);
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
