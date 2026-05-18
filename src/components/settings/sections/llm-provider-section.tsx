@@ -9,6 +9,9 @@ import { LLM_PRESETS, type LlmPreset } from "../llm-presets"
 import { ContextSizeSelector } from "../context-size-selector"
 import { resolveConfig } from "../preset-resolver"
 import { normalizeEndpoint } from "@/lib/endpoint-normalizer"
+import { UserLlmConfigSettings } from "../UserLlmConfigSettings"
+
+const IS_BACKEND_MODE = import.meta.env.VITE_DOTNET_BACKEND === "1"
 
 export function LlmProviderSection() {
   const { t } = useTranslation()
@@ -96,6 +99,25 @@ export function LlmProviderSection() {
           />
         ))}
       </div>
+
+      {IS_BACKEND_MODE && (
+        <>
+          <div className="relative my-2">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                后端 Ingest Worker
+              </span>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            用于服务端执行 Ingest 任务（生成 wiki 页面）。优先于部门配置，留空 API Key 则沿用已保存的密钥。
+          </p>
+          <UserLlmConfigSettings />
+        </>
+      )}
     </div>
   )
 }
