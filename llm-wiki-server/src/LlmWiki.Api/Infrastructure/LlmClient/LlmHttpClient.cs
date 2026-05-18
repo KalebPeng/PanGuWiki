@@ -25,13 +25,23 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
             yield return token;
     }
 
+    // Strip trailing /vN so users can paste either "https://api.x.com" or
+    // "https://api.x.com/v1" without getting a doubled /v1/v1 path.
+    private static string NormalizeOpenAiBase(string endpoint)
+    {
+        var s = endpoint.TrimEnd('/');
+        return System.Text.RegularExpressions.Regex.IsMatch(s, @"/v\d+$")
+            ? s[..s.LastIndexOf('/')]
+            : s;
+    }
+
     private async IAsyncEnumerable<string> StreamOpenAiCompatAsync(
         LlmConfig config,
         IEnumerable<ChatMessage> messages,
         LlmOptions options,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var url = config.Endpoint.TrimEnd('/') + "/v1/chat/completions";
+        var url = NormalizeOpenAiBase(config.Endpoint) + "/v1/chat/completions";
         var body = new
         {
             model = config.Model,
