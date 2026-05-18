@@ -13,5 +13,6 @@ public class IngestTask
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
-    public string? ProgressDetail { get; set; }
+    public string? ProgressDetail { get; set; }  // current step description
+    public string? LockedBy { get; set; }  // per-process instance ID during execution
 }
