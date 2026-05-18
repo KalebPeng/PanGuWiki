@@ -6,6 +6,7 @@ import {
   Clock,
   Loader2,
   RefreshCw,
+  Trash2,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -52,31 +53,46 @@ interface DbIngestTask {
   started_at: string | null
   completed_at: string | null
   error_message: string | null
+  progress_detail: string | null
 }
 
 function dbTaskToViewModel(t: DbIngestTask): TaskViewModel {
+  const status: TaskViewModel["status"] =
+    t.status === "done" ? "done"
+    : t.status === "failed" ? "failed"
+    : t.status === "running" ? "running"
+    : "queued"
+
+  const startedAt = t.started_at ? new Date(t.started_at).getTime() : undefined
+  const completedAt = t.completed_at ? new Date(t.completed_at).getTime() : undefined
+
   return {
     id: `db-${t.id}`,
     kind: "ingest",
     source: "activity-store",
     title: t.source_file_name,
-    status: t.status === "done" ? "done"
-          : t.status === "failed" ? "failed"
-          : t.status === "running" ? "running"
-          : "queued",
-    detail: t.status === "done"
+    status,
+    detail: status === "done"
           ? `${t.wiki_pages_count ?? 0} 个页面写入 Wiki`
-          : t.error_message ?? "",
+          : t.error_message ?? t.progress_detail ?? "",
+    progressLabel: t.progress_detail ?? undefined,
     createdAt: new Date(t.queued_at).getTime(),
-    updatedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
+    startedAt,
+    completedAt,
+    updatedAt: completedAt ?? startedAt,
+    error: status === "failed" ? (t.error_message ?? undefined) : undefined,
     filesWritten: [],
     relatedPaths: [t.source_file_path],
     canCancel: false,
     canRetry: false,
+    canDelete: status === "done" || status === "failed",
+    dbTaskId: t.id,
+    pageCount: t.wiki_pages_count ?? undefined,
+    sourcePath: t.source_file_path,
   }
 }
 
-function useDbIngestTasks(activeDeptId: string | null): DbIngestTask[] {
+function useDbIngestTasks(activeDeptId: string | null) {
   const [dbTasks, setDbTasks] = useState<DbIngestTask[]>([])
 
   useEffect(() => {
@@ -86,7 +102,14 @@ function useDbIngestTasks(activeDeptId: string | null): DbIngestTask[] {
       .catch(() => {})
   }, [activeDeptId])
 
-  return dbTasks
+  const deleteTask = async (taskId: string) => {
+    if (!activeDeptId) return
+    const { httpDelete } = await import("@/api/dotnet-client")
+    await httpDelete(`/api/departments/${activeDeptId}/ingest-tasks/${taskId}`)
+    setDbTasks((prev) => prev.filter((t) => t.id !== taskId))
+  }
+
+  return { dbTasks, deleteTask }
 }
 
 // ── Status + kind metadata ────────────────────────────────────────────────
@@ -205,42 +228,63 @@ function TaskRow({
   )
 }
 
-function TaskDetail({ task }: { task: TaskViewModel }) {
-  const ts = (n: number) => new Date(n).toLocaleTimeString()
+function TaskDetail({
+  task,
+  onDelete,
+}: {
+  task: TaskViewModel
+  onDelete?: () => void
+}) {
+  const fmt = (n: number) => new Date(n).toLocaleString("zh-CN", {
+    month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  })
+
+  const duration = task.startedAt && task.completedAt
+    ? Math.round((task.completedAt - task.startedAt) / 1000)
+    : null
+
+  const canDelete = task.canDelete && (task.status === "done" || task.status === "failed")
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
+      {/* Title */}
       <div>
         <p className="text-xs text-muted-foreground">{KIND_LABELS[task.kind]}</p>
         <h3 className="mt-0.5 break-all text-sm font-semibold leading-snug">{task.title}</h3>
       </div>
 
+      {/* Status chips */}
       <div className="flex flex-wrap gap-2">
         <Chip label={STATUS_LABELS[task.status]} className={STATUS_BG[task.status]} />
         <Chip label={KIND_LABELS[task.kind]} className={KIND_BG[task.kind]} />
       </div>
 
-      {task.progressLabel && (
+      {/* Progress */}
+      {task.progressLabel && task.status === "running" && (
         <div>
           <p className="text-xs font-medium text-muted-foreground">进度</p>
           <p className="mt-0.5 text-sm">{task.progressLabel}</p>
         </div>
       )}
 
-      {task.detail && task.detail !== task.progressLabel && (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">详情</p>
-          <p className="mt-0.5 break-all text-xs text-muted-foreground">{task.detail}</p>
-        </div>
-      )}
-
+      {/* Error */}
       {task.error && (
         <div className="rounded-md bg-destructive/10 p-3">
-          <p className="text-xs font-medium text-destructive">错误</p>
+          <p className="text-xs font-medium text-destructive">错误信息</p>
           <p className="mt-1 break-all text-xs text-destructive">{task.error}</p>
         </div>
       )}
 
+      {/* Page count */}
+      {task.pageCount !== undefined && task.status === "done" && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">写入页面</p>
+          <p className="mt-0.5 text-sm font-medium text-green-600">{task.pageCount} 个页面</p>
+        </div>
+      )}
+
+      {/* Files written */}
       {task.filesWritten.length > 0 && (
         <div>
           <p className="mb-1 text-xs font-medium text-muted-foreground">已写入文件</p>
@@ -254,14 +298,50 @@ function TaskDetail({ task }: { task: TaskViewModel }) {
         </div>
       )}
 
-      <div className="text-xs text-muted-foreground">
-        创建: {ts(task.createdAt)}
-        {task.updatedAt && task.updatedAt !== task.createdAt && (
-          <span className="ml-3">更新: {ts(task.updatedAt)}</span>
+      {/* Source path */}
+      {task.sourcePath && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">来源文件</p>
+          <p className="mt-0.5 break-all text-xs text-muted-foreground">{task.sourcePath}</p>
+        </div>
+      )}
+
+      {/* Timestamps */}
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <div className="flex justify-between">
+          <span>排队时间</span>
+          <span className="tabular-nums">{fmt(task.createdAt)}</span>
+        </div>
+        {task.startedAt && (
+          <div className="flex justify-between">
+            <span>开始时间</span>
+            <span className="tabular-nums">{fmt(task.startedAt)}</span>
+          </div>
+        )}
+        {task.completedAt && (
+          <div className="flex justify-between">
+            <span>完成时间</span>
+            <span className="tabular-nums">{fmt(task.completedAt)}</span>
+          </div>
+        )}
+        {duration !== null && (
+          <div className="flex justify-between">
+            <span>耗时</span>
+            <span className="tabular-nums">
+              {duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`}
+            </span>
+          </div>
+        )}
+        {task.dbTaskId && (
+          <div className="flex justify-between">
+            <span>Task ID</span>
+            <span className="truncate max-w-[200px] font-mono text-[10px]">{task.dbTaskId}</span>
+          </div>
         )}
       </div>
 
-      {(task.canCancel || task.canRetry) && (
+      {/* Actions */}
+      {(task.canCancel || task.canRetry || task.canDelete) && (
         <div className="mt-auto flex gap-2">
           {task.canRetry && (
             <Button
@@ -283,6 +363,19 @@ function TaskDetail({ task }: { task: TaskViewModel }) {
             >
               <X className="mr-1 h-3.5 w-3.5" />
               取消
+            </Button>
+          )}
+          {task.canDelete && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-destructive hover:text-destructive"
+              disabled={!canDelete}
+              title={canDelete ? "删除此任务记录" : "只能删除已完成或失败的任务"}
+              onClick={onDelete}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              删除
             </Button>
           )}
         </div>
@@ -316,7 +409,7 @@ export function TasksView() {
   const setKindFilter = useTasksStore((s) => s.setKindFilter)
 
   const activeDeptId = useOrgStore((s) => s.activeDeptId)
-  const dbTasksRaw = useDbIngestTasks(activeDeptId)
+  const { dbTasks: dbTasksRaw, deleteTask } = useDbIngestTasks(activeDeptId)
 
   const tasks = useMemo(() => {
     const memoryTasks = mergeTaskSnapshots({
@@ -466,7 +559,13 @@ export function TasksView() {
       {/* ── Right: detail ──────────────────────────────────────────── */}
       <aside className="w-[360px] shrink-0 overflow-y-auto">
         {selected ? (
-          <TaskDetail task={selected} />
+          <TaskDetail
+            task={selected}
+            onDelete={selected.dbTaskId ? async () => {
+              await deleteTask(selected.dbTaskId!)
+              setSelectedTaskId(null)
+            } : undefined}
+          />
         ) : (
           <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
             选择一个任务查看详情

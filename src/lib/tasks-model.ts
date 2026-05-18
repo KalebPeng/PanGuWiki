@@ -17,13 +17,19 @@ export interface TaskViewModel {
   detail: string
   createdAt: number
   updatedAt?: number
+  startedAt?: number
+  completedAt?: number
   error?: string
   progressLabel?: string
   filesWritten: string[]
   relatedPaths: string[]
   canCancel: boolean
   canRetry: boolean
+  canDelete?: boolean
   rawRef?: TaskRawRef
+  dbTaskId?: string
+  pageCount?: number
+  sourcePath?: string
 }
 
 interface MergeTaskSnapshotsArgs {
