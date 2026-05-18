@@ -90,6 +90,7 @@ export function UserLlmConfigSettings() {
             placeholder="https://api.openai.com"
             className="border rounded px-2 py-1"
           />
+          <span className="text-muted-foreground text-[11px]">填写 Base URL，无需带 /v1</span>
         </label>
         <label className="flex flex-col gap-1 text-xs">
           API Key {config?.has_api_key && <span className="text-green-600">（已配置）</span>}
