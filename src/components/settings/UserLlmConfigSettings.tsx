@@ -23,6 +23,7 @@ export function UserLlmConfigSettings() {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [keyWarning, setKeyWarning] = useState(false)
 
   useEffect(() => {
     httpGet<LlmConfigResponse>("/api/llm-configs/me")
@@ -39,7 +40,15 @@ export function UserLlmConfigSettings() {
       .catch(() => {})  // 404 = not configured, show empty form
   }, [])
 
+  const needsApiKey = form.provider !== "ollama"
+  const apiKeyMissing = needsApiKey && !form.apiKey && !config?.has_api_key
+
   const handleSave = async () => {
+    if (apiKeyMissing) {
+      setKeyWarning(true)
+      return
+    }
+    setKeyWarning(false)
     setSaving(true)
     try {
       const updated = await httpPut<LlmConfigResponse>("/api/llm-configs/me", {
@@ -87,10 +96,13 @@ export function UserLlmConfigSettings() {
           <input
             type="password"
             value={form.apiKey}
-            onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+            onChange={(e) => { setForm({ ...form, apiKey: e.target.value }); setKeyWarning(false) }}
             placeholder={config?.has_api_key ? "留空保留现有 key" : "sk-..."}
-            className="border rounded px-2 py-1"
+            className={`border rounded px-2 py-1 ${keyWarning ? "border-red-500" : ""}`}
           />
+          {keyWarning && (
+            <span className="text-red-500 text-[11px]">请填写 API Key，Ollama 本地模型除外</span>
+          )}
         </label>
         <label className="flex flex-col gap-1 text-xs">
           Model
