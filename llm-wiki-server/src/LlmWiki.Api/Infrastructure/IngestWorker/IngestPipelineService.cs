@@ -100,14 +100,6 @@ public class IngestPipelineService(
 
     public async Task RunAsync(IngestTask task, CancellationToken ct)
     {
-        // 原子标记为 running（幂等保护）
-        var updated = await db.IngestTasks
-            .Where(t => t.Id == task.Id && t.Status == "queued")
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(t => t.Status, "running")
-                .SetProperty(t => t.StartedAt, DateTime.UtcNow), ct);
-        if (updated == 0) return; // 已被其他路径处理
-
         var deptId = task.DepartmentId;
 
         async Task UpdateProgress(string step, string detail)
