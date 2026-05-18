@@ -111,4 +111,22 @@ public class IngestTaskController(AppDbContext db, ICurrentUser currentUser, IIn
 
         return Ok(tasks);
     }
+
+    /// <summary>DELETE api/departments/{deptId}/ingest-tasks/{taskId}</summary>
+    [HttpDelete("{taskId:guid}")]
+    [RequireDeptRole]
+    public async Task<IActionResult> Delete(Guid deptId, Guid taskId)
+    {
+        var task = await db.IngestTasks
+            .FirstOrDefaultAsync(t => t.DepartmentId == deptId && t.Id == taskId);
+
+        if (task is null) return NotFound();
+
+        if (task.Status is not ("done" or "failed"))
+            return Conflict(new { error = "只能删除已完成或失败的任务" });
+
+        db.IngestTasks.Remove(task);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
