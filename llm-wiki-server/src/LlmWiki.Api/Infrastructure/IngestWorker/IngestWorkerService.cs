@@ -9,7 +9,9 @@ public class IngestWorkerService(
     ILogger<IngestWorkerService> logger)
     : BackgroundService, IIngestQueue
 {
-    // 容量 1，DropWrite：重复信号丢弃，不阻塞
+    // Stable per-process ID used to scope startup recovery and claim ownership.
+    public static readonly string InstanceId = Guid.NewGuid().ToString("N");
+
     private readonly Channel<byte> _signal =
         Channel.CreateBounded<byte>(new BoundedChannelOptions(1)
         {
@@ -17,7 +19,6 @@ public class IngestWorkerService(
             SingleReader = true,
         });
 
-    // 健康检查用内存字段
     public DateTime? LastCompletedAt { get; private set; }
     public Guid? CurrentTaskId { get; private set; }
     public bool IsAlive { get; private set; }
@@ -27,20 +28,21 @@ public class IngestWorkerService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         IsAlive = true;
-        logger.LogInformation("[IngestWorker] Starting...");
+        logger.LogInformation("[IngestWorker] Starting (instanceId={Id})", InstanceId);
 
-        // 启动时：将崩溃中的 running 任务重置为 queued
+        // On startup: only reset tasks WE locked (not tasks owned by sibling instances)
         await using (var scope = scopeFactory.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var reset = await db.IngestTasks
-                .Where(t => t.Status == "running")
-                .ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "queued"), stoppingToken);
+                .Where(t => t.Status == "running" && t.LockedBy == InstanceId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(t => t.Status, "queued")
+                    .SetProperty(t => t.LockedBy, (string?)null), stoppingToken);
             if (reset > 0)
-                logger.LogWarning("[IngestWorker] Reset {Count} interrupted tasks to queued", reset);
+                logger.LogWarning("[IngestWorker] Reset {Count} own interrupted tasks to queued", reset);
         }
 
-        // 有 queued 任务则立即触发
         Signal();
 
         await foreach (var _ in _signal.Reader.ReadAllAsync(stoppingToken))
@@ -60,16 +62,13 @@ public class IngestWorkerService(
             await using (var scope = scopeFactory.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                task = await db.IngestTasks
-                    .Where(t => t.Status == "queued")
-                    .OrderBy(t => t.QueuedAt)
-                    .FirstOrDefaultAsync(ct);
+                task = await TryClaimNextTaskAsync(db, ct);
             }
 
             if (task is null) break;
 
             CurrentTaskId = task.Id;
-            logger.LogInformation("[IngestWorker] Processing task {TaskId} ({File})",
+            logger.LogInformation("[IngestWorker] Claimed task {TaskId} ({File})",
                 task.Id, task.SourceFileName);
             try
             {
@@ -87,5 +86,52 @@ public class IngestWorkerService(
             }
             finally { CurrentTaskId = null; }
         }
+    }
+
+    // Atomically claim the next queued task using PostgreSQL FOR UPDATE SKIP LOCKED.
+    // Returns the task already in status='running', or null if the queue is empty.
+    // Falls back to a non-atomic SELECT approach for non-PostgreSQL providers (e.g. SQLite in tests).
+    private static async Task<LlmWiki.Api.Modules.Wiki.Entities.IngestTask?> TryClaimNextTaskAsync(
+        AppDbContext db, CancellationToken ct)
+    {
+        // Use atomic PostgreSQL claim when available; fall back for test/SQLite environments.
+        var isNpgsql = db.Database.ProviderName?.Contains("Npgsql") == true;
+
+        if (isNpgsql)
+        {
+            var claimed = await db.IngestTasks
+                .FromSqlInterpolated($"""
+                    UPDATE ingest_tasks
+                    SET status = 'running',
+                        locked_by = {InstanceId},
+                        started_at = NOW()
+                    WHERE id = (
+                        SELECT id FROM ingest_tasks
+                        WHERE status = 'queued'
+                        ORDER BY queued_at
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    RETURNING *
+                    """)
+                .AsNoTracking()
+                .ToListAsync(ct);
+            return claimed.FirstOrDefault();
+        }
+
+        // Non-atomic fallback for non-PostgreSQL providers (test/SQLite only).
+        // Race conditions are acceptable here since this path is only used in tests.
+        var task = await db.IngestTasks
+            .Where(t => t.Status == "queued")
+            .OrderBy(t => t.QueuedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (task is null) return null;
+
+        task.Status = "running";
+        task.LockedBy = InstanceId;
+        task.StartedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return task;
     }
 }
