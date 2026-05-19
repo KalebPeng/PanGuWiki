@@ -21,6 +21,13 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
             yield break;
         }
 
+        if (config.Provider == "google")
+        {
+            await foreach (var token in StreamGeminiAsync(config, messages, options, ct))
+                yield return token;
+            yield break;
+        }
+
         await foreach (var token in StreamOpenAiCompatAsync(config, messages, options, ct))
             yield return token;
     }
@@ -189,6 +196,89 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
                 delta.TryGetProperty("text", out var text))
                 return text.GetString();
             return null;
+        }
+        catch { return null; }
+    }
+
+    internal static string BuildGeminiUrl(string endpoint, string model, string apiKey)
+    {
+        var base_ = endpoint.TrimEnd('/');
+        if (base_.EndsWith("/v1beta", StringComparison.OrdinalIgnoreCase))
+            base_ = base_[..^7];
+        return $"{base_}/v1beta/models/{model}:streamGenerateContent?key={apiKey}&alt=sse";
+    }
+
+    private async IAsyncEnumerable<string> StreamGeminiAsync(
+        LlmConfig config,
+        IEnumerable<ChatMessage> messages,
+        LlmOptions options,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var url = BuildGeminiUrl(config.Endpoint, config.Model, config.EncryptedApiKey);
+        var msgList = messages.ToList();
+        var systemText = string.Join("\n", msgList
+            .Where(m => m.Role == "system")
+            .Select(m => m.Content));
+        var contents = msgList
+            .Where(m => m.Role != "system")
+            .Select(m => new {
+                role = m.Role == "assistant" ? "model" : m.Role,
+                parts = new[] { new { text = m.Content } }
+            })
+            .ToList();
+
+        var body = new Dictionary<string, object>
+        {
+            ["contents"] = contents,
+            ["generationConfig"] = new {
+                temperature = (double)options.Temperature,
+                maxOutputTokens = options.MaxTokens,
+            }
+        };
+        if (!string.IsNullOrEmpty(systemText))
+            body["system_instruction"] = new { parts = new[] { new { text = systemText } } };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var response = await http.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"LLM API error {(int)response.StatusCode} from {url}: {errorBody}",
+                null, response.StatusCode);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream && !ct.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (line is null) break;
+            var token = ParseGeminiLine(line);
+            if (token != null) yield return token;
+        }
+    }
+
+    internal static string? ParseGeminiLine(string line)
+    {
+        if (!line.StartsWith("data: ")) return null;
+        var data = line[6..].Trim();
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            var parts = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts");
+            return parts.GetArrayLength() > 0 &&
+                   parts[0].TryGetProperty("text", out var text)
+                       ? text.GetString()
+                       : null;
         }
         catch { return null; }
     }
