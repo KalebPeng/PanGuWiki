@@ -94,7 +94,7 @@ public class EmbeddingConfigController(
 
     /// <summary>PUT /api/departments/{deptId}/embedding-config — admin sets dept config</summary>
     [HttpPut("api/departments/{deptId:guid}/embedding-config")]
-    [RequireDeptRole]
+    [RequireDeptRole("admin")]
     public async Task<IActionResult> UpsertDept(Guid deptId, [FromBody] UpsertEmbeddingConfigRequest req)
     {
         var existing = await db.EmbeddingConfigs
