@@ -15,6 +15,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DepartmentModule> DepartmentModules => Set<DepartmentModule>();
     public DbSet<IngestTask> IngestTasks => Set<IngestTask>();
     public DbSet<LlmConfig> LlmConfigs => Set<LlmConfig>();
+    public DbSet<EmbeddingConfig> EmbeddingConfigs => Set<EmbeddingConfig>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -105,6 +106,24 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(c => c.Id).HasDefaultValueSql("gen_random_uuid()");
             e.Property(c => c.IsActive).HasDefaultValue(true);
             e.Property(c => c.MaxContextSize).HasDefaultValue(32000);
+            e.Property(c => c.CreatedAt).HasDefaultValueSql("now()");
+            e.HasIndex(c => c.UserId)
+             .HasFilter("user_id IS NOT NULL AND is_active = true")
+             .IsUnique();
+            e.HasIndex(c => c.DepartmentId)
+             .HasFilter("department_id IS NOT NULL AND is_active = true")
+             .IsUnique();
+        });
+
+        modelBuilder.Entity<EmbeddingConfig>(e =>
+        {
+            e.ToTable("embedding_configs", t => t.HasCheckConstraint(
+                "chk_embedding_config_scope",
+                "num_nonnulls(user_id, department_id) = 1"));
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(c => c.IsActive).HasDefaultValue(true);
+            e.Property(c => c.Dimensions).HasDefaultValue(1536);
             e.Property(c => c.CreatedAt).HasDefaultValueSql("now()");
             e.HasIndex(c => c.UserId)
              .HasFilter("user_id IS NOT NULL AND is_active = true")
