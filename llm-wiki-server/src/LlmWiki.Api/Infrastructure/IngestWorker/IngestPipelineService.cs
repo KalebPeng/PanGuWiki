@@ -2,10 +2,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using LlmWiki.Api.Infrastructure.EmbeddingClient;
 using LlmWiki.Api.Infrastructure.LlmClient;
+using LlmWiki.Api.Models;
 using LlmWiki.Api.Modules.Wiki.Entities;
 using LlmWiki.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace LlmWiki.Api.Infrastructure.IngestWorker;
 
@@ -17,7 +20,10 @@ public class IngestPipelineService(
     FileService fileService,
     LlmConfigService llmConfigService,
     IngestEventBroadcaster broadcaster,
-    AppDbContext db)
+    AppDbContext db,
+    IEmbeddingClient embeddingClient,
+    VectorService vectorService,
+    ILogger<IngestPipelineService> logger)
 {
     private static readonly Regex OpenerLine =
         new(@"^---\s*FILE:\s*(.+?)\s*---\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -233,6 +239,9 @@ public class IngestPipelineService(
             if (writtenPaths.Count > 0)
                 await SaveIngestCacheAsync(projectRoot, task.SourceFileName, sourceContent, writtenPaths);
 
+            // Embed generated wiki pages (skips gracefully when EmbeddingConfig is absent)
+            await EmbedWikiPagesAsync(task, parseResult.Blocks, projectRoot, ct);
+
             await MarkDone(task.Id, writtenPaths.Count,
                 $"{writtenPaths.Count} files written", ct);
             broadcaster.Publish(deptId, broadcaster.CreateEvent(task.Id, "done",
@@ -260,6 +269,73 @@ public class IngestPipelineService(
                 .SetProperty(t => t.WikiPagesCount, pageCount)
                 .SetProperty(t => t.ProgressDetail, detail)
                 .SetProperty(t => t.CompletedAt, DateTime.UtcNow), ct);
+
+    private async Task EmbedWikiPagesAsync(
+        IngestTask task,
+        IReadOnlyList<ParsedFileBlock> blocks,
+        string projectRoot,
+        CancellationToken ct)
+    {
+        // Resolve: user-level config → dept-level fallback → skip if neither
+        EmbeddingConfig? embConfig = null;
+        if (task.TriggeredBy.HasValue)
+            embConfig = await db.EmbeddingConfigs
+                .Where(c => c.UserId == task.TriggeredBy && c.IsActive)
+                .FirstOrDefaultAsync(ct);
+        embConfig ??= await db.EmbeddingConfigs
+            .Where(c => c.DepartmentId == task.DepartmentId && c.IsActive)
+            .FirstOrDefaultAsync(ct);
+
+        if (embConfig is null) return;
+
+        var runtimeEmb = new EmbeddingConfig
+        {
+            Id = embConfig.Id,
+            UserId = embConfig.UserId,
+            DepartmentId = embConfig.DepartmentId,
+            Provider = embConfig.Provider,
+            Endpoint = embConfig.Endpoint,
+            EncryptedApiKey = llmConfigService.DecryptIfNotEmpty(embConfig.EncryptedApiKey),
+            Model = embConfig.Model,
+            Dimensions = embConfig.Dimensions,
+            IsActive = embConfig.IsActive,
+            CreatedAt = embConfig.CreatedAt,
+        };
+
+        foreach (var block in blocks.Where(b => b.Path.StartsWith("wiki/")))
+        {
+            var chunks = TextChunker.ChunkMarkdown(block.Content);
+            if (chunks.Count == 0) continue;
+
+            float[][] embeddings;
+            try
+            {
+                embeddings = await embeddingClient.EmbedBatchAsync(
+                    runtimeEmb, chunks.Select(c => c.Text).ToArray(), ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[Ingest] Embedding failed for {Path}, skipping", block.Path);
+                continue;
+            }
+
+            if (embeddings.Length != chunks.Count)
+            {
+                logger.LogWarning(
+                    "[Ingest] Embedding count mismatch for {Path}: expected {E}, got {G}",
+                    block.Path, chunks.Count, embeddings.Length);
+                continue;
+            }
+
+            // pageId: replace / with _ to satisfy VectorService validation ([a-zA-Z0-9\-_.])
+            var pageId = block.Path.Replace('/', '_');
+            var chunkInputs = chunks.Select((c, i) => new ChunkUpsertInput(
+                (uint)c.Index, c.Text, c.HeadingPath, embeddings[i]
+            )).ToArray();
+
+            await vectorService.UpsertChunks(task.DepartmentId, projectRoot, pageId, chunkInputs);
+        }
+    }
 
     // ── File I/O helpers ──────────────────────────────────────────────────
 
