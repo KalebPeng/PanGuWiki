@@ -248,7 +248,7 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
             throw new HttpRequestException(
-                $"LLM API error {(int)response.StatusCode} from {url}: {errorBody}",
+                $"LLM API error {(int)response.StatusCode} from {RedactQueryKey(url)}: {errorBody}",
                 null, response.StatusCode);
         }
 
@@ -281,5 +281,15 @@ public class LlmHttpClient(HttpClient http) : ILlmClient
                        : null;
         }
         catch { return null; }
+    }
+
+    internal static string RedactQueryKey(string url)
+    {
+        var keyIdx = url.IndexOf("key=", StringComparison.OrdinalIgnoreCase);
+        if (keyIdx < 0) return url;
+        var end = url.IndexOf('&', keyIdx);
+        return end < 0
+            ? url[..keyIdx] + "key=REDACTED"
+            : url[..keyIdx] + "key=REDACTED" + url[end..];
     }
 }

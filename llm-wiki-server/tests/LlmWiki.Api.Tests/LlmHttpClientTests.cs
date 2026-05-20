@@ -83,4 +83,11 @@ public class LlmHttpClientTests
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=key123&alt=sse")]
     public void BuildGeminiUrl_NormalizesEndpoint(string endpoint, string model, string key, string expected)
         => Assert.Equal(expected, LlmHttpClient.BuildGeminiUrl(endpoint, model, key));
+
+    [Theory]
+    [InlineData("https://api.example.com/path?key=secret", "https://api.example.com/path?key=REDACTED")]
+    [InlineData("https://api.example.com/path?key=secret&alt=sse", "https://api.example.com/path?key=REDACTED&alt=sse")]
+    [InlineData("https://api.example.com/path?other=1", "https://api.example.com/path?other=1")]
+    public void RedactQueryKey_StripsApiKey(string input, string expected)
+        => Assert.Equal(expected, LlmHttpClient.RedactQueryKey(input));
 }

@@ -58,7 +58,7 @@ public class EmbeddingHttpClient(HttpClient http) : IEmbeddingClient
         {
             var err = await response.Content.ReadAsStringAsync(ct);
             throw new HttpRequestException(
-                $"Google Embedding API error {(int)response.StatusCode} from {url}: {err}",
+                $"Google Embedding API error {(int)response.StatusCode} from {RedactQueryKey(url)}: {err}",
                 null, response.StatusCode);
         }
 
@@ -102,5 +102,15 @@ public class EmbeddingHttpClient(HttpClient http) : IEmbeddingClient
         if (base_.EndsWith("/v1beta", StringComparison.OrdinalIgnoreCase))
             base_ = base_[..^7];
         return $"{base_}/v1beta/models/{model}:batchEmbedContents?key={apiKey}";
+    }
+
+    internal static string RedactQueryKey(string url)
+    {
+        var keyIdx = url.IndexOf("key=", StringComparison.OrdinalIgnoreCase);
+        if (keyIdx < 0) return url;
+        var end = url.IndexOf('&', keyIdx);
+        return end < 0
+            ? url[..keyIdx] + "key=REDACTED"
+            : url[..keyIdx] + "key=REDACTED" + url[end..];
     }
 }

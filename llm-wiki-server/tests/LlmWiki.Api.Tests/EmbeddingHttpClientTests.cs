@@ -48,4 +48,11 @@ public class EmbeddingHttpClientTests
     public void BuildGoogleBatchUrl_NormalizesEndpoint(
         string endpoint, string model, string key, string expected)
         => Assert.Equal(expected, EmbeddingHttpClient.BuildGoogleBatchUrl(endpoint, model, key));
+
+    [Theory]
+    [InlineData("https://api.example.com/path?key=secret", "https://api.example.com/path?key=REDACTED")]
+    [InlineData("https://api.example.com/path?key=secret&alt=sse", "https://api.example.com/path?key=REDACTED&alt=sse")]
+    [InlineData("https://api.example.com/path?other=1", "https://api.example.com/path?other=1")]
+    public void RedactQueryKey_StripsApiKey(string input, string expected)
+        => Assert.Equal(expected, EmbeddingHttpClient.RedactQueryKey(input));
 }
