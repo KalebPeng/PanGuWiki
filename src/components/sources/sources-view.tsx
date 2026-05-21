@@ -676,7 +676,7 @@ function SourceTree({
         const isPendingDelete = pendingDeletePath === node.path
         if (node.is_dir) {
           const children = node.children ?? []
-          const isCollapsed = collapsed[node.path] ?? false
+          const isCollapsed = collapsed[node.path] ?? true
           const isDragOver = dragOverPath === node.path
           return (
             <div key={node.path}>
