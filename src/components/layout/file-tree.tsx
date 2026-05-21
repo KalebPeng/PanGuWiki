@@ -6,7 +6,7 @@ import type { FileNode } from "@/types/wiki"
 import { useTranslation } from "react-i18next"
 
 function TreeNode({ node, depth }: { node: FileNode; depth: number }) {
-  const [expanded, setExpanded] = useState(depth < 1)
+  const [expanded, setExpanded] = useState(false)
   const selectedFile = useWikiStore((s) => s.selectedFile)
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
 
