@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_DOTNET_URL: ""
+        VITE_DOTNET_BACKEND: "1"
         VITE_WIKI_PARENT_DIR: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
         VITE_MULTI_TENANT: "${VITE_MULTI_TENANT:-true}"
     ports:
