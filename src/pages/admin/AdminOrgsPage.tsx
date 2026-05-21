@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { httpGet, httpPost, httpDelete } from '../../api/dotnet-client'
 
 interface AdminOrg {
@@ -11,8 +10,7 @@ interface AdminOrg {
   created_at: string
 }
 
-export function AdminOrgsPage() {
-  const navigate = useNavigate()
+export function AdminOrgsPage({ onSelectOrg }: { onSelectOrg?: (orgId: string) => void } = {}) {
   const [orgs, setOrgs] = useState<AdminOrg[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -128,7 +126,7 @@ export function AdminOrgsPage() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => navigate(`/admin/orgs/${org.id}`)}
+                  onClick={() => onSelectOrg?.(org.id)}
                   className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-accent transition-colors"
                 >
                   管理部门

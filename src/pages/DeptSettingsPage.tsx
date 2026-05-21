@@ -7,6 +7,8 @@ import { httpDelete, httpGet, httpPost, httpPut } from '../api/dotnet-client'
 interface MemberResponse {
   id: string
   user_id: string
+  email: string
+  display_name: string
   role: string
   joined_at: string
 }
@@ -93,7 +95,7 @@ function MembersTab({ deptId, members, loading, error, onReload }: MembersTabPro
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-5 py-3 text-left font-medium text-muted-foreground">用户 ID</th>
+                  <th className="px-5 py-3 text-left font-medium text-muted-foreground">成员</th>
                   <th className="px-5 py-3 text-left font-medium text-muted-foreground">角色</th>
                   <th className="px-5 py-3 text-left font-medium text-muted-foreground">加入时间</th>
                   <th className="px-5 py-3 text-right font-medium text-muted-foreground">操作</th>
@@ -102,7 +104,10 @@ function MembersTab({ deptId, members, loading, error, onReload }: MembersTabPro
               <tbody className="divide-y divide-border">
                 {members.map((m) => (
                   <tr key={m.id} className="bg-card hover:bg-accent/40 transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-foreground">{m.user_id}</td>
+                    <td className="px-5 py-3">
+                      <div className="font-medium text-foreground">{m.display_name || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{m.email}</div>
+                    </td>
                     <td className="px-5 py-3 text-foreground">
                       {ROLE_LABELS[m.role as Role] ?? m.role}
                     </td>
@@ -208,7 +213,7 @@ function RolesTab({ deptId, members, loading, error, onReload }: RolesTabProps) 
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-5 py-3 text-left font-medium text-muted-foreground">用户 ID</th>
+                  <th className="px-5 py-3 text-left font-medium text-muted-foreground">成员</th>
                   <th className="px-5 py-3 text-left font-medium text-muted-foreground">当前角色</th>
                   <th className="px-5 py-3 text-right font-medium text-muted-foreground">修改角色</th>
                 </tr>
@@ -216,7 +221,10 @@ function RolesTab({ deptId, members, loading, error, onReload }: RolesTabProps) 
               <tbody className="divide-y divide-border">
                 {members.map((m) => (
                   <tr key={m.id} className="bg-card hover:bg-accent/40 transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-foreground">{m.user_id}</td>
+                    <td className="px-5 py-3">
+                      <div className="font-medium text-foreground">{m.display_name || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{m.email}</div>
+                    </td>
                     <td className="px-5 py-3 text-foreground">
                       {ROLE_LABELS[m.role as Role] ?? m.role}
                     </td>
@@ -325,10 +333,9 @@ function ModulesTab({ deptId }: ModulesTabProps) {
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Embeddable content (no page wrapper) ──────────────────────────────────────
 
-export function DeptSettingsPage() {
-  const { deptId } = useParams<{ deptId: string }>()
+export function DeptSettingsContent({ deptId }: { deptId: string }) {
   const [activeTab, setActiveTab] = useState<TabKey>('members')
   const [members, setMembers] = useState<MemberResponse[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
@@ -348,9 +355,7 @@ export function DeptSettingsPage() {
     }
   }, [deptId])
 
-  useEffect(() => {
-    loadMembers()
-  }, [loadMembers])
+  useEffect(() => { loadMembers() }, [loadMembers])
 
   const TABS: { key: TabKey; label: string }[] = [
     { key: 'members', label: '成员管理' },
@@ -359,71 +364,56 @@ export function DeptSettingsPage() {
   ]
 
   return (
+    <>
+      <div className="mb-6 flex gap-1 rounded-xl border border-border bg-muted/30 p-1">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={[
+              'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+              activeTab === tab.key
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'members' && (
+        <MembersTab deptId={deptId} members={members} loading={membersLoading} error={membersError} onReload={loadMembers} />
+      )}
+      {activeTab === 'roles' && (
+        <RolesTab deptId={deptId} members={members} loading={membersLoading} error={membersError} onReload={loadMembers} />
+      )}
+      {activeTab === 'modules' && <ModulesTab deptId={deptId} />}
+    </>
+  )
+}
+
+// ── Standalone page (kept for direct URL access) ───────────────────────────────
+
+export function DeptSettingsPage() {
+  const { deptId } = useParams<{ deptId: string }>()
+
+  return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Header */}
       <header className="flex items-center gap-4 border-b border-border px-6 py-4">
         <Link
           to={`/d/${deptId}/wiki`}
           className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M15 18l-6-6 6-6" />
           </svg>
           返回 Wiki
         </Link>
         <h1 className="text-lg font-semibold text-foreground">部门设置</h1>
       </header>
-
-      {/* Content */}
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
-        {/* Tab navigation */}
-        <div className="mb-6 flex gap-1 rounded-xl border border-border bg-muted/30 p-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                activeTab === tab.key
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              ].join(' ')}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        {activeTab === 'members' && (
-          <MembersTab
-            deptId={deptId ?? ''}
-            members={members}
-            loading={membersLoading}
-            error={membersError}
-            onReload={loadMembers}
-          />
-        )}
-        {activeTab === 'roles' && (
-          <RolesTab
-            deptId={deptId ?? ''}
-            members={members}
-            loading={membersLoading}
-            error={membersError}
-            onReload={loadMembers}
-          />
-        )}
-        {activeTab === 'modules' && <ModulesTab deptId={deptId ?? ''} />}
+        <DeptSettingsContent deptId={deptId ?? ''} />
       </main>
     </div>
   )

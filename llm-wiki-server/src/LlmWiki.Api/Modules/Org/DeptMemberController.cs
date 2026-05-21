@@ -20,7 +20,7 @@ public class DeptMemberController(AppDbContext db) : ControllerBase
 
     public record UpdateMemberRoleRequest(string Role);
 
-    public record MemberResponse(Guid Id, Guid UserId, string Role, DateTime JoinedAt);
+    public record MemberResponse(Guid Id, Guid UserId, string Email, string DisplayName, string Role, DateTime JoinedAt);
 
     public record ErrorResponse(string Error);
 
@@ -33,7 +33,10 @@ public class DeptMemberController(AppDbContext db) : ControllerBase
         var members = await db.DepartmentMembers
             .Where(m => m.DepartmentId == deptId)
             .OrderBy(m => m.JoinedAt)
-            .Select(m => new MemberResponse(m.Id, m.UserId, m.Role, m.JoinedAt))
+            .Join(db.Users,
+                m => m.UserId,
+                u => u.Id,
+                (m, u) => new MemberResponse(m.Id, m.UserId, u.Email, u.DisplayName, m.Role, m.JoinedAt))
             .ToListAsync();
 
         return Ok(members);
@@ -79,7 +82,7 @@ public class DeptMemberController(AppDbContext db) : ControllerBase
         return CreatedAtAction(
             nameof(ListMembers),
             new { deptId },
-            new MemberResponse(member.Id, member.UserId, member.Role, member.JoinedAt));
+            new MemberResponse(member.Id, member.UserId, user.Email, user.DisplayName, member.Role, member.JoinedAt));
     }
 
     // ── PUT /api/departments/{deptId}/members/{userId} ───────────────────────
@@ -100,7 +103,10 @@ public class DeptMemberController(AppDbContext db) : ControllerBase
         member.Role = request.Role.ToLowerInvariant();
         await db.SaveChangesAsync();
 
-        return Ok(new MemberResponse(member.Id, member.UserId, member.Role, member.JoinedAt));
+        var user = await db.Users.FindAsync(member.UserId);
+        return Ok(new MemberResponse(member.Id, member.UserId,
+            user?.Email ?? "", user?.DisplayName ?? "",
+            member.Role, member.JoinedAt));
     }
 
     // ── DELETE /api/departments/{deptId}/members/{userId} ───────────────────

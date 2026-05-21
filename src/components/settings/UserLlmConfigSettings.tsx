@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react"
+import { CheckCircle2, Loader2 } from "lucide-react"
 import { httpGet, httpPut } from "@/api/dotnet-client"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 interface LlmConfigResponse {
   id: string
@@ -11,6 +14,13 @@ interface LlmConfigResponse {
   max_context_size: number
   is_active: boolean
 }
+
+const PROVIDERS = [
+  { value: "openai", label: "OpenAI / 兼容" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "gemini", label: "Google Gemini" },
+  { value: "ollama", label: "Ollama（本地）" },
+]
 
 export function UserLlmConfigSettings() {
   const [config, setConfig] = useState<LlmConfigResponse | null>(null)
@@ -24,6 +34,7 @@ export function UserLlmConfigSettings() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [keyWarning, setKeyWarning] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     httpGet<LlmConfigResponse>("/api/llm-configs/me")
@@ -32,12 +43,12 @@ export function UserLlmConfigSettings() {
         setForm({
           provider: cfg.provider,
           endpoint: cfg.endpoint,
-          apiKey: "",  // never echo the key
+          apiKey: "",
           model: cfg.model,
           maxContextSize: cfg.max_context_size,
         })
       })
-      .catch(() => {})  // 404 = not configured, show empty form
+      .catch(() => {})
   }, [])
 
   const needsApiKey = form.provider !== "ollama"
@@ -49,6 +60,7 @@ export function UserLlmConfigSettings() {
       return
     }
     setKeyWarning(false)
+    setSaveError(null)
     setSaving(true)
     try {
       const updated = await httpPut<LlmConfigResponse>("/api/llm-configs/me", {
@@ -61,75 +73,111 @@ export function UserLlmConfigSettings() {
       setConfig(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : '保存失败，请重试')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-medium">个人 LLM 配置（优先于部门配置）</h3>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-xs">
-          Provider
+    <div className="space-y-5">
+      <p className="text-xs text-muted-foreground">
+        用于服务端执行 Ingest 任务（生成 wiki 页面），优先级高于部门配置。留空 API Key 则保留已存储的密钥。
+      </p>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label>Provider</Label>
           <select
             value={form.provider}
             onChange={(e) => setForm({ ...form, provider: e.target.value })}
-            className="border rounded px-2 py-1"
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            <option value="openai">OpenAI / 兼容</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="ollama">Ollama</option>
+            {PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          Endpoint
-          <input
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Endpoint</Label>
+          <Input
             value={form.endpoint}
             onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
             placeholder="https://api.openai.com"
-            className="border rounded px-2 py-1"
           />
-          <span className="text-muted-foreground text-[11px]">填写 Base URL，无需带 /v1</span>
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          API Key {config?.has_api_key && <span className="text-green-600">（已配置）</span>}
-          <input
-            type="password"
-            value={form.apiKey}
-            onChange={(e) => { setForm({ ...form, apiKey: e.target.value }); setKeyWarning(false) }}
-            placeholder={config?.has_api_key ? "留空保留现有 key" : "sk-..."}
-            className={`border rounded px-2 py-1 ${keyWarning ? "border-red-500" : ""}`}
-          />
-          {keyWarning && (
-            <span className="text-red-500 text-[11px]">请填写 API Key，Ollama 本地模型除外</span>
-          )}
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          Model
-          <input
+          <p className="text-[11px] text-muted-foreground">填写 Base URL，无需带 /v1</p>
+        </div>
+
+        {needsApiKey && (
+          <div className="space-y-1.5">
+            <Label>
+              API Key{" "}
+              {config?.has_api_key && (
+                <span className="text-emerald-600 dark:text-emerald-400">（已配置）</span>
+              )}
+            </Label>
+            <Input
+              type="password"
+              value={form.apiKey}
+              onChange={(e) => {
+                setForm({ ...form, apiKey: e.target.value })
+                setKeyWarning(false)
+              }}
+              placeholder={config?.has_api_key ? "留空保留现有密钥" : "sk-…"}
+              className={keyWarning ? "border-destructive ring-destructive/30 focus:ring-destructive" : ""}
+            />
+            {keyWarning && (
+              <p className="text-[11px] text-destructive">Ollama 以外的 provider 需要 API Key</p>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label>Model</Label>
+          <Input
             value={form.model}
             onChange={(e) => setForm({ ...form, model: e.target.value })}
             placeholder="gpt-4o"
-            className="border rounded px-2 py-1"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          Max Context Size
-          <input
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Max Context Size</Label>
+          <Input
             type="number"
             value={form.maxContextSize}
-            onChange={(e) => setForm({ ...form, maxContextSize: parseInt(e.target.value) || 32000 })}
-            className="border rounded px-2 py-1"
+            onChange={(e) =>
+              setForm({ ...form, maxContextSize: parseInt(e.target.value) || 32000 })
+            }
           />
-        </label>
+        </div>
       </div>
+
+      {saveError && (
+        <p className="text-[12px] text-destructive">{saveError}</p>
+      )}
       <button
         onClick={handleSave}
         disabled={saving}
-        className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {saving ? "保存中..." : saved ? "已保存 ✓" : "保存配置"}
+        {saving ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            保存中…
+          </>
+        ) : saved ? (
+          <>
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            已保存
+          </>
+        ) : (
+          "保存个人配置"
+        )}
       </button>
     </div>
   )

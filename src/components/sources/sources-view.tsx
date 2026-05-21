@@ -1,7 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus, Pencil } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus, Pencil, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useOrgStore } from "@/stores/org-store"
 import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile, renameFile } from "@/commands/fs"
@@ -48,6 +57,8 @@ export function SourcesView() {
   const activeDeptId = useOrgStore(s => s.activeDeptId)
   const [ingestedFiles, setIngestedFiles] = useState<Set<string>>(new Set())
   const [inProgressFiles, setInProgressFiles] = useState<Set<string>>(new Set())
+  // 等待二次确认的 re-ingest 节点
+  const [reingestConfirmNode, setReingestConfirmNode] = useState<FileNode | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
   const newFolderInputRef = useRef<HTMLInputElement>(null)
@@ -354,7 +365,7 @@ export function SourcesView() {
     return { deletedWikiPaths: actuallyDeleted }
   }
 
-  async function handleIngest(node: FileNode) {
+  async function doIngest(node: FileNode) {
     if (!project || ingestingPath) return
     setIngestingPath(node.path)
     try {
@@ -368,8 +379,56 @@ export function SourcesView() {
     }
   }
 
+  function handleIngest(node: FileNode) {
+    if (!project || ingestingPath) return
+    // 已经 ingest 过：弹出二次确认框
+    if (ingestedFiles.has(node.name)) {
+      setReingestConfirmNode(node)
+      return
+    }
+    void doIngest(node)
+  }
+
   return (
     <div className="relative flex h-full flex-col">
+      {/* Re-ingest 二次确认弹窗 */}
+      <Dialog
+        open={reingestConfirmNode !== null}
+        onOpenChange={(open) => { if (!open) setReingestConfirmNode(null) }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-4 w-4 text-amber-500" />
+              重新 Ingest？
+            </DialogTitle>
+            <DialogDescription>
+              <span className="font-medium text-foreground">
+                {reingestConfirmNode?.name}
+              </span>{" "}
+              已经 ingest 过，Wiki 中存在对应的分析页面。
+              <br />
+              继续将重新入队处理，原有内容会被覆盖。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <DialogClose>
+              <Button variant="outline" size="sm">取消</Button>
+            </DialogClose>
+            <Button
+              size="sm"
+              onClick={() => {
+                const node = reingestConfirmNode
+                setReingestConfirmNode(null)
+                if (node) void doIngest(node)
+              }}
+            >
+              继续 Ingest
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <input
         ref={fileInputRef}
         type="file"

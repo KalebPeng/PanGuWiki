@@ -13,15 +13,14 @@ import { AppLayout } from "@/components/layout/app-layout"
 import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
 import { AuthGuard } from "@/components/auth/AuthGuard"
-import { AdminGuard } from "@/components/auth/AdminGuard"
 import { useAuthStore } from "@/stores/auth-store"
+import { useOrgStore } from "@/stores/org-store"
+import { httpGet } from "@/api/dotnet-client"
+import { isSuperAdminFromToken } from "@/lib/auth-utils"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
-import { DeptSelectPage } from "@/pages/DeptSelectPage"
-import { AdminLayout } from "@/pages/admin/AdminLayout"
-import { AdminUsersPage } from "@/pages/admin/AdminUsersPage"
-import { AdminOrgsPage } from "@/pages/admin/AdminOrgsPage"
-import { AdminOrgDetailPage } from "@/pages/admin/AdminOrgDetailPage"
+import { DeptSettingsPage } from "@/pages/DeptSettingsPage"
+import { WikiDashboardPage } from "@/pages/WikiDashboardPage"
 
 import type { WikiProject } from "@/types/wiki"
 import type { ProjectLlmSettings } from "@/lib/project-llm-settings"
@@ -286,14 +285,6 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route
-            path="/select-dept"
-            element={
-              <AuthGuard>
-                <DeptSelectPage />
-              </AuthGuard>
-            }
-          />
-          <Route
             path="/d/:deptId/*"
             element={
               <AuthGuard requireDept>
@@ -301,19 +292,6 @@ function App() {
               </AuthGuard>
             }
           />
-          <Route
-            path="/admin"
-            element={
-              <AdminGuard>
-                <AdminLayout />
-              </AdminGuard>
-            }
-          >
-            <Route index element={<AdminUsersPage />} />
-            <Route path="users" element={<AdminUsersPage />} />
-            <Route path="orgs" element={<AdminOrgsPage />} />
-            <Route path="orgs/:orgId" element={<AdminOrgDetailPage />} />
-          </Route>
           <Route path="*" element={<RootRedirect />} />
         </Routes>
       </BrowserRouter>
@@ -357,19 +335,76 @@ function App() {
   )
 }
 
-// 根路由重定向：已登录 → 部门选择，未登录 → 登录页
+// 根路由重定向：已登录 → 自动跳第一个部门，未登录 → 登录页
 function RootRedirect() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const hasHydrated = useAuthStore((s) => s.hasHydrated)
+  const navigate = useNavigate()
+  const setOrgs = useOrgStore((s) => s.setOrgs)
+  const setDepts = useOrgStore((s) => s.setDepts)
+  const setActiveDeptId = useOrgStore((s) => s.setActiveDeptId)
+  const [loading, setLoading] = useState(false)
+  const [noDept, setNoDept] = useState(false)
 
-  if (!hasHydrated) return null  // 等待 store 从 localStorage 恢复
+  useEffect(() => {
+    if (!hasHydrated || !isAuthenticated) return
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      try {
+        const orgs = await httpGet<{ id: string; name: string; slug: string }[]>('/api/orgs')
+        const deptArrays = await Promise.all(
+          orgs.map((o) =>
+            httpGet<{ id: string; org_id: string; name: string; slug: string }[]>(`/api/orgs/${o.id}/departments`)
+          )
+        )
+        if (cancelled) return
+        const allDepts = deptArrays.flat()
+        setOrgs(orgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug })))
+        setDepts(allDepts.map((d) => ({ id: d.id, orgId: d.org_id, name: d.name, slug: d.slug, wikiProjectPath: '' })))
+        if (allDepts.length === 0) {
+          setNoDept(true)
+          return
+        }
+        setActiveDeptId(allDepts[0].id)
+        navigate(`/d/${allDepts[0].id}`, { replace: true })
+      } catch {
+        if (!cancelled) setNoDept(true)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [hasHydrated, isAuthenticated, navigate, setOrgs, setDepts, setActiveDeptId])
 
-  return isAuthenticated
-    ? <Navigate to="/select-dept" replace />
-    : <Navigate to="/login" replace />
+  if (!hasHydrated) return null
+
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">加载中...</div>
+  )
+
+  if (noDept) return (
+    <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm">
+      <p className="text-muted-foreground">
+        {isSuperAdminFromToken()
+          ? '当前系统尚无部门，请先创建组织和部门后再继续。'
+          : '您尚未加入任何部门，请联系管理员。'}
+      </p>
+      <button
+        onClick={() => { useAuthStore.getState().clearAuth(); navigate('/login') }}
+        className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent transition-colors"
+      >
+        退出登录
+      </button>
+    </div>
+  )
+
+  return null
 }
 
-// DeptApp: reads deptId from URL, fetches dept info, loads file tree, renders AppLayout.
+// DeptApp: reads deptId from URL, fetches dept info, loads file tree, renders sub-routes.
 // Must be defined outside App (hooks rules prohibit defining components inside another component).
 function DeptApp() {
   const { deptId } = useParams<{ deptId: string }>()
@@ -409,7 +444,7 @@ function DeptApp() {
           restoreQueue(proj.id, proj.path).catch(() => {})
         )
 
-        // 4. 加载文件树
+        // 5. 加载文件树
         const { listDirectory } = await import("@/commands/fs")
         const tree = await listDirectory(dept.wiki_project_path)
         if (!cancelled) {
@@ -435,16 +470,23 @@ function DeptApp() {
     return <div className="flex items-center justify-center h-screen text-muted-foreground">加载中...</div>
   }
 
-  const handleDeptSettings = () => {
-    if (deptId) navigate(`/d/${deptId}/settings`)
-  }
-
   return (
-    <AppLayout
-      onSwitchProject={() => navigate('/select-dept')}
-      deptId={deptId}
-      onDeptSettings={handleDeptSettings}
-    />
+    <Routes>
+      <Route index element={
+        <WikiDashboardPage
+          deptId={deptId!}
+          onEnterWiki={() => navigate(`/d/${deptId}/wiki`)}
+        />
+      } />
+      <Route path="settings/*" element={<DeptSettingsPage />} />
+      <Route path="*" element={
+        <AppLayout
+          onSwitchProject={() => navigate(`/d/${deptId}`)}
+          deptId={deptId}
+          onDeptSettings={() => navigate(`/d/${deptId}/settings`)}
+        />
+      } />
+    </Routes>
   )
 }
 

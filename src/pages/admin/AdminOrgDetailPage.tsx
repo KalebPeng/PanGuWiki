@@ -23,8 +23,9 @@ interface AdminMember {
 
 const ROLES = ['admin', 'editor', 'viewer']
 
-export function AdminOrgDetailPage() {
-  const { orgId } = useParams<{ orgId: string }>()
+export function AdminOrgDetailPage({ orgId: orgIdProp }: { orgId?: string } = {}) {
+  const params = useParams<{ orgId: string }>()
+  const orgId = orgIdProp ?? params.orgId
   const [depts, setDepts] = useState<AdminDept[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

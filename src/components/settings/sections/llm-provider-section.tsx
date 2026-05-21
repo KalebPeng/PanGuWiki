@@ -10,8 +10,14 @@ import { ContextSizeSelector } from "../context-size-selector"
 import { resolveConfig } from "../preset-resolver"
 import { normalizeEndpoint } from "@/lib/endpoint-normalizer"
 import { UserLlmConfigSettings } from "../UserLlmConfigSettings"
+import { DeptLlmConfigSettings } from "../DeptLlmConfigSettings"
+import { isSuperAdminFromToken } from "@/lib/auth-utils"
+import { useAuthStore } from "@/stores/auth-store"
+import { useOrgStore } from "@/stores/org-store"
 
 const IS_BACKEND_MODE = import.meta.env.VITE_DOTNET_BACKEND === "1"
+
+type TabId = "frontend" | "dept" | "personal"
 
 export function LlmProviderSection() {
   const { t } = useTranslation()
@@ -25,6 +31,32 @@ export function LlmProviderSection() {
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [savedId, setSavedId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<TabId>("frontend")
+  const [isDeptAdmin, setIsDeptAdmin] = useState(false)
+
+  const user = useAuthStore((s) => s.user)
+  const activeDeptId = useOrgStore((s) => s.activeDeptId)
+
+  useEffect(() => {
+    if (isSuperAdminFromToken() || !IS_BACKEND_MODE) return
+    if (!activeDeptId || !user?.id) return
+    httpGet<{ id: string; user_id: string; role: string }[]>(
+      `/api/departments/${activeDeptId}/members`,
+    )
+      .then((members) => {
+        const me = members.find((m) => m.user_id === user.id)
+        setIsDeptAdmin(me?.role === 'admin')
+      })
+      .catch(() => {})
+  }, [activeDeptId, user?.id])
+
+  const isAdmin = IS_BACKEND_MODE && (isSuperAdminFromToken() || isDeptAdmin)
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "frontend", label: "前端配置" },
+    ...(isAdmin ? [{ id: "dept" as TabId, label: "部门配置" }] : []),
+    ...(IS_BACKEND_MODE ? [{ id: "personal" as TabId, label: "个人配置" }] : []),
+  ]
 
   function toggleExpand(id: string) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -60,7 +92,6 @@ export function LlmProviderSection() {
     const next = { ...providerConfigs, [id]: merged }
     setProviderConfigs(next)
     persist(next, activePresetId).catch(() => {})
-    // If this preset is active, refresh the resolved LlmConfig live.
     if (id === activePresetId) {
       const preset = LLM_PRESETS.find((p) => p.id === id)
       if (preset) setLlmConfig(resolveConfig(preset, merged, llmConfig))
@@ -84,40 +115,57 @@ export function LlmProviderSection() {
         </p>
       </div>
 
-      <div className="space-y-2">
-        {LLM_PRESETS.map((preset) => (
-          <PresetRow
-            key={preset.id}
-            preset={preset}
-            override={providerConfigs[preset.id]}
-            isActive={activePresetId === preset.id}
-            isExpanded={!!expanded[preset.id]}
-            savedHere={savedId === preset.id}
-            onToggleActive={() => toggleActive(preset.id)}
-            onToggleExpand={() => toggleExpand(preset.id)}
-            onChange={(patch) => updateOverride(preset.id, patch)}
-          />
-        ))}
-      </div>
-
-      {IS_BACKEND_MODE && (
-        <>
-          <div className="relative my-2">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                后端 Ingest Worker
-              </span>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            用于服务端执行 Ingest 任务（生成 wiki 页面）。优先于部门配置，留空 API Key 则沿用已保存的密钥。
-          </p>
-          <UserLlmConfigSettings />
-        </>
+      {/* Tab bar — only shown when there are backend tabs available */}
+      {tabs.length > 1 && (
+        <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       )}
+
+      {/* 前端配置 */}
+      {activeTab === "frontend" && (
+        <div className="space-y-3">
+          {tabs.length === 1 && (
+            <p className="text-xs text-muted-foreground">
+              前端直接调用的 LLM 配置，用于 Tauri 桌面模式下的所有 LLM 功能，以及 Web 模式下 lint、深度研究等非 ingest 操作。
+            </p>
+          )}
+          <div className="space-y-2">
+            {LLM_PRESETS.map((preset) => (
+              <PresetRow
+                key={preset.id}
+                preset={preset}
+                override={providerConfigs[preset.id]}
+                isActive={activePresetId === preset.id}
+                isExpanded={!!expanded[preset.id]}
+                savedHere={savedId === preset.id}
+                onToggleActive={() => toggleActive(preset.id)}
+                onToggleExpand={() => toggleExpand(preset.id)}
+                onChange={(patch) => updateOverride(preset.id, patch)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 部门配置（admin only） */}
+      {activeTab === "dept" && isAdmin && <DeptLlmConfigSettings />}
+
+      {/* 个人配置（backend mode） */}
+      {activeTab === "personal" && IS_BACKEND_MODE && <UserLlmConfigSettings />}
     </div>
   )
 }
