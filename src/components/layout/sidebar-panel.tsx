@@ -2,6 +2,11 @@ import { useState } from "react"
 import { KnowledgeTree } from "./knowledge-tree"
 import { FileTree } from "./file-tree"
 
+export const SIDEBAR_TAB_LABELS = {
+  knowledge: "知识库",
+  files: "文件",
+} as const
+
 export function SidebarPanel() {
   const [mode, setMode] = useState<"knowledge" | "files">("knowledge")
 
@@ -16,7 +21,7 @@ export function SidebarPanel() {
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          Knowledge
+          {SIDEBAR_TAB_LABELS.knowledge}
         </button>
         <button
           onClick={() => setMode("files")}
@@ -26,7 +31,7 @@ export function SidebarPanel() {
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          Files
+          {SIDEBAR_TAB_LABELS.files}
         </button>
       </div>
       <div className="flex-1 overflow-hidden">

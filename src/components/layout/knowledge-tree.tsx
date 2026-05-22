@@ -18,17 +18,30 @@ interface WikiPageInfo {
   origin?: string
 }
 
+export const KNOWLEDGE_TYPE_LABELS = {
+  overview: "概览",
+  entity: "实体",
+  concept: "概念",
+  source: "来源",
+  synthesis: "综合",
+  comparison: "对比",
+  query: "问题",
+  other: "其他",
+} as const
+
 const TYPE_CONFIG: Record<string, { icon: typeof FileText; label: string; color: string; order: number }> = {
-  overview:    { icon: Layout,      label: "Overview",     color: "text-yellow-500", order: 0 },
-  entity:      { icon: Users,       label: "Entities",     color: "text-blue-500",   order: 1 },
-  concept:     { icon: Lightbulb,   label: "Concepts",     color: "text-purple-500", order: 2 },
-  source:      { icon: BookOpen,    label: "Sources",      color: "text-orange-500", order: 3 },
-  synthesis:   { icon: GitMerge,    label: "Synthesis",    color: "text-red-500",    order: 4 },
-  comparison:  { icon: BarChart3,   label: "Comparisons",  color: "text-emerald-500",order: 5 },
-  query:       { icon: HelpCircle,  label: "Queries",      color: "text-green-500",  order: 6 },
+  overview:    { icon: Layout,      label: KNOWLEDGE_TYPE_LABELS.overview,    color: "text-yellow-500", order: 0 },
+  entity:      { icon: Users,       label: KNOWLEDGE_TYPE_LABELS.entity,      color: "text-blue-500",   order: 1 },
+  concept:     { icon: Lightbulb,   label: KNOWLEDGE_TYPE_LABELS.concept,     color: "text-purple-500", order: 2 },
+  source:      { icon: BookOpen,    label: KNOWLEDGE_TYPE_LABELS.source,      color: "text-orange-500", order: 3 },
+  synthesis:   { icon: GitMerge,    label: KNOWLEDGE_TYPE_LABELS.synthesis,   color: "text-red-500",    order: 4 },
+  comparison:  { icon: BarChart3,   label: KNOWLEDGE_TYPE_LABELS.comparison,  color: "text-emerald-500",order: 5 },
+  query:       { icon: HelpCircle,  label: KNOWLEDGE_TYPE_LABELS.query,       color: "text-green-500",  order: 6 },
 }
 
-const DEFAULT_CONFIG = { icon: FileText, label: "Other", color: "text-muted-foreground", order: 99 }
+const DEFAULT_CONFIG = { icon: FileText, label: KNOWLEDGE_TYPE_LABELS.other, color: "text-muted-foreground", order: 99 }
+
+export const RAW_SOURCES_LABEL = "原始资料"
 
 export const DEFAULT_EXPANDED_KNOWLEDGE_TYPES: string[] = []
 
@@ -267,7 +280,7 @@ function RawSourcesSection() {
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         )}
         <BookOpen className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-        <span className="flex-1 text-left font-medium text-muted-foreground">Raw Sources</span>
+        <span className="flex-1 text-left font-medium text-muted-foreground">{RAW_SOURCES_LABEL}</span>
         <span className="text-xs text-muted-foreground">{sources.length}</span>
       </button>
       {expanded && (
