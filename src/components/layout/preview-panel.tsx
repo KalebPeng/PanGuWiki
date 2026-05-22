@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from "react"
-import { X } from "lucide-react"
+import { X, Pencil } from "lucide-react"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile, writeFile, renameFile } from "@/commands/fs"
 import { getFileCategory, isBinary } from "@/lib/file-types"
@@ -130,13 +130,16 @@ export function PreviewPanel() {
             autoFocus
           />
         ) : (
-          <span
-            className="truncate text-xs text-muted-foreground cursor-text hover:text-foreground"
-            title="点击重命名"
+          <button
             onClick={startRename}
+            className="group flex min-w-0 items-center gap-1 rounded px-1 hover:bg-accent"
+            title="重命名"
           >
-            {fileName}
-          </span>
+            <span className="truncate text-xs text-muted-foreground group-hover:text-foreground">
+              {fileName}
+            </span>
+            <Pencil className="h-3 w-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
         )}
         <button
           onClick={() => setSelectedFile(null)}
