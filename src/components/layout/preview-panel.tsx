@@ -1,7 +1,7 @@
-import { useEffect, useCallback, useRef, useState } from "react"
-import { X, Pencil } from "lucide-react"
+import { useEffect, useCallback, useRef } from "react"
+import { X } from "lucide-react"
 import { useWikiStore } from "@/stores/wiki-store"
-import { readFile, writeFile, renameFile } from "@/commands/fs"
+import { readFile, writeFile } from "@/commands/fs"
 import { getFileCategory, isBinary } from "@/lib/file-types"
 import { WikiEditor } from "@/components/editor/wiki-editor"
 import { FilePreview } from "@/components/editor/file-preview"
@@ -13,9 +13,6 @@ export function PreviewPanel() {
   const setFileContent = useWikiStore((s) => s.setFileContent)
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [renaming, setRenaming] = useState(false)
-  const [renameValue, setRenameValue] = useState("")
-  const renameInputRef = useRef<HTMLInputElement>(null)
   // Snapshot of what was most recently loaded from disk. Milkdown re-emits
   // `markdownUpdated` on initial parse (before the user types anything),
   // which used to trigger an auto-save that could write back a placeholder
@@ -77,31 +74,6 @@ export function PreviewPanel() {
     }
   }, [])
 
-  function startRename() {
-    if (!selectedFile) return
-    setRenameValue(getFileName(selectedFile))
-    setRenaming(true)
-    setTimeout(() => {
-      renameInputRef.current?.select()
-    }, 0)
-  }
-
-  async function commitRename() {
-    if (!selectedFile || !renaming) return
-    setRenaming(false)
-    const newName = renameValue.trim()
-    const oldName = getFileName(selectedFile)
-    if (!newName || newName === oldName) return
-    const dir = selectedFile.substring(0, selectedFile.lastIndexOf("/"))
-    const newPath = dir ? `${dir}/${newName}` : newName
-    try {
-      await renameFile(selectedFile, newPath)
-      setSelectedFile(newPath)
-    } catch (err) {
-      console.error("Rename failed:", err)
-    }
-  }
-
   if (!selectedFile) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -116,31 +88,9 @@ export function PreviewPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-3 py-1.5">
-        {renaming ? (
-          <input
-            ref={renameInputRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitRename()
-              if (e.key === "Escape") setRenaming(false)
-            }}
-            className="flex-1 truncate rounded border border-primary bg-background px-1.5 py-0.5 text-xs focus:outline-none"
-            autoFocus
-          />
-        ) : (
-          <button
-            onClick={startRename}
-            className="group flex min-w-0 items-center gap-1 rounded px-1 hover:bg-accent"
-            title="重命名"
-          >
-            <span className="truncate text-xs text-muted-foreground group-hover:text-foreground">
-              {fileName}
-            </span>
-            <Pencil className="h-3 w-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-        )}
+        <span className="truncate text-xs text-muted-foreground" title={selectedFile}>
+          {fileName}
+        </span>
         <button
           onClick={() => setSelectedFile(null)}
           className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent"
