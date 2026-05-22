@@ -30,6 +30,8 @@ const TYPE_CONFIG: Record<string, { icon: typeof FileText; label: string; color:
 
 const DEFAULT_CONFIG = { icon: FileText, label: "Other", color: "text-muted-foreground", order: 99 }
 
+export const DEFAULT_EXPANDED_KNOWLEDGE_TYPES: string[] = []
+
 export function KnowledgeTree() {
   const project = useWikiStore((s) => s.project)
   const selectedFile = useWikiStore((s) => s.selectedFile)
@@ -38,7 +40,9 @@ export function KnowledgeTree() {
   const setFileTree = useWikiStore((s) => s.setFileTree)
   const bumpDataVersion = useWikiStore((s) => s.bumpDataVersion)
   const [pages, setPages] = useState<WikiPageInfo[]>([])
-  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(["overview", "entity", "concept", "source"]))
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(
+    () => new Set(DEFAULT_EXPANDED_KNOWLEDGE_TYPES),
+  )
   // Two-stage delete: first click arms the row, second click executes.
   // Only one row armed at a time (clicking another row replaces).
   const [armedPath, setArmedPath] = useState<string | null>(null)
