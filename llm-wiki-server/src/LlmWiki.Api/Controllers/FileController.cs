@@ -88,6 +88,35 @@ public class FileController(FileService fileService) : ControllerBase
         catch (Exception ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpGet("download")]
+    public IActionResult Download([FromQuery] string path)
+    {
+        try
+        {
+            var fullPath = fileService.ResolveAndValidatePath(path);
+            var bytes = System.IO.File.ReadAllBytes(fullPath);
+            var mime = GetMimeType(Path.GetExtension(fullPath));
+            var fileName = Path.GetFileName(fullPath);
+            return File(bytes, mime, fileName);
+        }
+        catch (Exception ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    private static string GetMimeType(string ext) => ext.TrimStart('.').ToLowerInvariant() switch
+    {
+        "pdf"  => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "png"  => "image/png",
+        "jpg" or "jpeg" => "image/jpeg",
+        "gif"  => "image/gif",
+        "md"   => "text/markdown; charset=utf-8",
+        "txt"  => "text/plain; charset=utf-8",
+        "json" => "application/json",
+        _      => "application/octet-stream",
+    };
+
     [AllowAnonymous]  // token 通过 query string 传入，自行验证
     [HttpGet("preview")]
     public IActionResult Preview([FromQuery] string path, [FromQuery] string? token,

@@ -156,6 +156,8 @@ public class FileService(PdfExtractService pdfExtract, OfficeExtractService offi
         return (Convert.ToBase64String(bytes), mime);
     }
 
+    public string ResolveAndValidatePath(string path) => EnsurePathWithinWikiProject(path);
+
     public Task<List<string>> FindRelatedWikiPages(string projectPath, string sourceName)
     {
         EnsurePathWithinWikiProject(projectPath);

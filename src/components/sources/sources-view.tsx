@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus, Pencil, RotateCcw } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FolderPlus, Pencil, RotateCcw, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -15,6 +15,34 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { useOrgStore } from "@/stores/org-store"
 import { listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile, uploadFiles, createDirectory, moveFile, renameFile } from "@/commands/fs"
 import { openFilePreview, httpGet } from "@/api/dotnet-client"
+
+const IS_BACKEND_MODE = import.meta.env.VITE_DOTNET_BACKEND === "1"
+const BACKEND_BASE = import.meta.env.VITE_DOTNET_URL ?? "http://localhost:5200"
+
+async function downloadSourceFile(path: string, name: string) {
+  if (IS_BACKEND_MODE) {
+    const token = localStorage.getItem("llmwiki:auth:token")
+    const res = await fetch(
+      `${BACKEND_BASE}/api/file/download?path=${encodeURIComponent(path)}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    )
+    if (!res.ok) throw new Error(await res.text())
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url; a.download = name; a.click()
+    URL.revokeObjectURL(url)
+  } else {
+    // Tauri: read as text and download
+    const { readFile: rf } = await import("@/commands/fs")
+    const content = await rf(path)
+    const blob = new Blob([content], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url; a.download = name; a.click()
+    URL.revokeObjectURL(url)
+  }
+}
 import type { FileNode } from "@/types/wiki"
 import { enqueueIngest } from "@/lib/ingest-queue"
 import { useTranslation } from "react-i18next"
@@ -606,13 +634,23 @@ function SourceTree({
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [dragOverPath, setDragOverPath] = useState<string | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ node: FileNode; x: number; y: number } | null>(null)
+
+  // 关闭右键菜单
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = () => setCtxMenu(null)
+    window.addEventListener("click", close)
+    window.addEventListener("contextmenu", close)
+    return () => { window.removeEventListener("click", close); window.removeEventListener("contextmenu", close) }
+  }, [ctxMenu])
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [renamingValue, setRenamingValue] = useState("")
   const [addingSubIn, setAddingSubIn] = useState<string | null>(null)  // 正在哪个文件夹下建子文件夹
   const [subFolderName, setSubFolderName] = useState("")
 
   const toggle = (path: string) => {
-    setCollapsed((prev) => ({ ...prev, [path]: !prev[path] }))
+    setCollapsed((prev) => ({ ...prev, [path]: !(prev[path] ?? true) }))
   }
 
   async function handleRename(node: FileNode) {
@@ -672,6 +710,42 @@ function SourceTree({
 
   return (
     <>
+      {/* 右键菜单浮层 */}
+      {ctxMenu && (
+        <div
+          className="fixed z-50 min-w-[140px] rounded-lg border border-border bg-popover py-1 shadow-lg"
+          style={{ top: ctxMenu.y, left: ctxMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+            onClick={() => {
+              downloadSourceFile(ctxMenu.node.path, ctxMenu.node.name).catch((e) =>
+                alert("下载失败：" + (e instanceof Error ? e.message : e))
+              )
+              setCtxMenu(null)
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            下载
+          </button>
+          <button
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+            onClick={() => { onIngest(ctxMenu.node); setCtxMenu(null) }}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            Ingest
+          </button>
+          <div className="my-1 border-t border-border" />
+          <button
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+            onClick={() => { handleDeleteClick(ctxMenu.node); setCtxMenu(null) }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            删除
+          </button>
+        </div>
+      )}
       {sorted.map((node) => {
         const isPendingDelete = pendingDeletePath === node.path
         if (node.is_dir) {
@@ -807,6 +881,11 @@ function SourceTree({
               e.dataTransfer.effectAllowed = 'move'
             }}
             onDoubleClick={() => canPreview && openFilePreview(node.path)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setCtxMenu({ node, x: e.clientX, y: e.clientY })
+            }}
             className={`flex w-full items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-grab active:cursor-grabbing ${canPreview ? 'group' : ''}`}
             style={{ paddingLeft: `${depth * 16 + 4}px` }}
             title={canPreview ? '双击预览' : undefined}
