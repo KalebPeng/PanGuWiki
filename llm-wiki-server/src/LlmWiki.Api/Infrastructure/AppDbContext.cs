@@ -16,6 +16,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<IngestTask> IngestTasks => Set<IngestTask>();
     public DbSet<LlmConfig> LlmConfigs => Set<LlmConfig>();
     public DbSet<EmbeddingConfig> EmbeddingConfigs => Set<EmbeddingConfig>();
+    public DbSet<ImageGenerationConfig> ImageGenerationConfigs => Set<ImageGenerationConfig>();
+    public DbSet<GeneratedImage> GeneratedImages => Set<GeneratedImage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -131,6 +133,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(c => c.DepartmentId)
              .HasFilter("department_id IS NOT NULL AND is_active = true")
              .IsUnique();
+        });
+
+        modelBuilder.Entity<ImageGenerationConfig>(e =>
+        {
+            e.ToTable("image_generation_configs");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(c => c.IsActive).HasDefaultValue(true);
+            e.Property(c => c.DefaultSize).HasDefaultValue("1024x1024");
+            e.Property(c => c.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(c => c.UpdatedAt).HasDefaultValueSql("now()");
+            e.HasIndex(c => c.DepartmentId)
+                .HasFilter("is_active = true")
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<GeneratedImage>(e =>
+        {
+            e.ToTable("generated_images");
+            e.HasKey(i => i.Id);
+            e.Property(i => i.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(i => i.CreatedAt).HasDefaultValueSql("now()");
+            e.HasIndex(i => new { i.DepartmentId, i.UserId, i.CreatedAt });
+            e.HasIndex(i => new { i.DepartmentId, i.Id });
         });
     }
 }
