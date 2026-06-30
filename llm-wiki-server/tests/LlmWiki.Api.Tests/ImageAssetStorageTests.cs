@@ -50,6 +50,22 @@ public class ImageAssetStorageTests
     }
 
     [Fact]
+    public async Task ReadAsync_ThrowsWhenCaseVariantSiblingLeavesRootOnCaseSensitiveFileSystems()
+    {
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var parent = Path.Combine(Path.GetTempPath(), "llmwiki-image-assets", Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(parent, "image-assets");
+        var storage = new ImageAssetStorage(Options.Create(new ImageAssetOptions { RootPath = root }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            storage.ReadAsync("../Image-assets/foo.png", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ReadAsync_ThrowsWhenFileDoesNotExist()
     {
         var root = Path.Combine(Path.GetTempPath(), "llmwiki-image-assets", Guid.NewGuid().ToString("N"));

@@ -74,9 +74,11 @@ public class ImageAssetStorage
     private string GetFullPathUnderRoot(string relativePath)
     {
         var fullPath = Path.GetFullPath(Path.Combine(_rootPath, relativePath));
-        var root = Path.TrimEndingDirectorySeparator(_rootPath);
-        if (!string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase) &&
-            !fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        var relativeToRoot = Path.GetRelativePath(_rootPath, fullPath);
+        if (Path.IsPathRooted(relativeToRoot) ||
+            relativeToRoot == ".." ||
+            relativeToRoot.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            relativeToRoot.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Image asset path must remain under the configured root.");
         }
