@@ -2,6 +2,7 @@ using LlmWiki.Api.Hubs;
 using LlmWiki.Api.Infrastructure;
 using LlmWiki.Api.Infrastructure.EmbeddingClient;
 using LlmWiki.Api.Infrastructure.ImageAssets;
+using LlmWiki.Api.Infrastructure.ImageGeneration;
 using LlmWiki.Api.Infrastructure.IngestWorker;
 using LlmWiki.Api.Infrastructure.LlmClient;
 using LlmWiki.Api.Modules.Identity;
@@ -106,6 +107,8 @@ builder.Services.AddSingleton<SseTokenService>();
 builder.Services.AddHttpClient<ILlmClient, LlmHttpClient>(c =>
     c.Timeout = TimeSpan.FromMinutes(10));
 builder.Services.AddHttpClient<IEmbeddingClient, EmbeddingHttpClient>(c =>
+    c.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddHttpClient<OpenAiImagesClient>(c =>
     c.Timeout = TimeSpan.FromMinutes(5));
 builder.Services.AddScoped<IngestPipelineService>();
 builder.Services.AddSingleton<IngestWorkerService>();

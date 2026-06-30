@@ -1,5 +1,14 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using LlmWiki.Api.Infrastructure;
+using LlmWiki.Api.Modules.Identity;
+using LlmWiki.Api.Modules.Identity.Entities;
+using LlmWiki.Api.Modules.Org.Entities;
 using LlmWiki.Api.Modules.Wiki.Entities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 
 namespace LlmWiki.Api.Tests;
@@ -45,11 +54,239 @@ public class ImageGenerationControllerTests
         Assert.Equal(1, await db.GeneratedImages.CountAsync(i => i.DepartmentId == deptId && i.UserId == userId));
     }
 
+    [Fact]
+    public async Task ConfigGet_NeverReturnsApiKey_AfterPutConfig()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+
+        var put = await client.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
+        {
+            enabled = true,
+            base_url = "https://relay.example.com",
+            api_key = "sk-test-secret",
+            model = "gpt-image-1",
+            default_size = "1024x1024",
+        });
+        put.EnsureSuccessStatusCode();
+
+        var get = await client.GetAsync($"/api/departments/{deptId}/image-generation/config");
+        get.EnsureSuccessStatusCode();
+        var json = await get.Content.ReadAsStringAsync();
+
+        Assert.Contains("\"has_api_key\":true", json);
+        Assert.DoesNotContain("sk-test-secret", json);
+        Assert.DoesNotContain("\"api_key\":", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("encrypted", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Generate_ReturnsBadRequest_WhenConfigMissing()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "viewer");
+
+        var response = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "A quiet product photo",
+            n = 1,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("config", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Generate_WithB64Json_SavesFileUnderAssetRoot_AndListReturnsCurrentUserMetadata()
+    {
+        var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal("https://relay.example.com/v1/images/generations", request.RequestUri?.ToString());
+                Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+                Assert.Equal("sk-test-secret", request.Headers.Authorization?.Parameter);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { b64_json = Convert.ToBase64String(expectedBytes) },
+                        },
+                    }),
+                };
+            }),
+        };
+        var (client, deptId, userId) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId);
+
+        var generate = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "A quiet product photo",
+            n = 1,
+        });
+        generate.EnsureSuccessStatusCode();
+        var body = await ReadJson(generate);
+        var image = body.RootElement.GetProperty("images")[0];
+        var id = image.GetProperty("id").GetGuid();
+
+        Assert.Equal("A quiet product photo", image.GetProperty("prompt").GetString());
+        Assert.Equal("gpt-image-1", image.GetProperty("model").GetString());
+        Assert.Equal("1024x1024", image.GetProperty("size").GetString());
+        Assert.Contains($"/api/departments/{deptId}/images/{id}/content", image.GetProperty("content_url").GetString());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var saved = await db.GeneratedImages.SingleAsync(i => i.Id == id);
+            Assert.Equal(deptId, saved.DepartmentId);
+            Assert.Equal(userId, saved.UserId);
+            Assert.StartsWith(factory.ImageAssetRoot, Path.GetFullPath(Path.Combine(factory.ImageAssetRoot, saved.FilePath)));
+            Assert.True(File.Exists(Path.Combine(factory.ImageAssetRoot, saved.FilePath)));
+        }
+
+        var list = await client.GetAsync($"/api/departments/{deptId}/images");
+        list.EnsureSuccessStatusCode();
+        var listBody = await ReadJson(list);
+        var listed = listBody.RootElement.GetProperty("images")[0];
+        Assert.Equal(id, listed.GetProperty("id").GetGuid());
+        Assert.Equal("A quiet product photo", listed.GetProperty("prompt").GetString());
+    }
+
+    [Fact]
+    public async Task ContentAndDelete_RejectAnotherUsersImage()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (ownerClient, deptId, ownerId) = await CreateAuthenticatedDepartmentClient(factory, "viewer", email: "owner@example.com");
+        var (otherClient, _, _) = await CreateAuthenticatedDepartmentClient(factory, "viewer", deptId, email: "other@example.com");
+        var imageId = Guid.NewGuid();
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var storage = scope.ServiceProvider.GetRequiredService<LlmWiki.Api.Infrastructure.ImageAssets.ImageAssetStorage>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var path = await storage.SaveAsync(deptId, ownerId, imageId, "image/png", Encoding.UTF8.GetBytes("owner-image"), CancellationToken.None);
+            db.GeneratedImages.Add(new GeneratedImage
+            {
+                Id = imageId,
+                DepartmentId = deptId,
+                UserId = ownerId,
+                Prompt = "Owner image",
+                Model = "gpt-image-1",
+                Size = "1024x1024",
+                FilePath = path,
+                MimeType = "image/png",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var content = await otherClient.GetAsync($"/api/departments/{deptId}/images/{imageId}/content");
+        var delete = await otherClient.DeleteAsync($"/api/departments/{deptId}/images/{imageId}");
+        Assert.Equal(HttpStatusCode.NotFound, content.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, delete.StatusCode);
+
+        var ownerContent = await ownerClient.GetAsync($"/api/departments/{deptId}/images/{imageId}/content");
+        ownerContent.EnsureSuccessStatusCode();
+    }
+
     private static AppDbContext CreateDb(string name)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(name)
             .Options;
         return new AppDbContext(options);
+    }
+
+    private static async Task PutConfig(HttpClient client, Guid deptId)
+    {
+        var response = await client.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
+        {
+            enabled = true,
+            base_url = "https://relay.example.com",
+            api_key = "sk-test-secret",
+            model = "gpt-image-1",
+            default_size = "1024x1024",
+        });
+        response.EnsureSuccessStatusCode();
+    }
+
+    private static async Task<JsonDocument> ReadJson(HttpResponseMessage response)
+    {
+        var stream = await response.Content.ReadAsStreamAsync();
+        return await JsonDocument.ParseAsync(stream);
+    }
+
+    private static async Task<(HttpClient Client, Guid DeptId, Guid UserId)> CreateAuthenticatedDepartmentClient(
+        TestWebApplicationFactory factory,
+        string role,
+        Guid? deptId = null,
+        string email = "user@example.com")
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
+        var now = DateTime.UtcNow;
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            DisplayName = email,
+            PasswordHash = "unused",
+            IsActive = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var org = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Org",
+            Slug = "test-org-" + Guid.NewGuid().ToString("N"),
+            OwnerId = user.Id,
+            CreatedAt = now,
+        };
+        var departmentId = deptId ?? Guid.NewGuid();
+        var department = deptId.HasValue
+            ? await db.Departments.FindAsync(departmentId)
+            : null;
+        if (department is null)
+        {
+            department = new Department
+            {
+                Id = departmentId,
+                OrgId = org.Id,
+                Org = org,
+                Name = "Test Dept",
+                Slug = "test-dept-" + Guid.NewGuid().ToString("N"),
+                WikiProjectPath = Path.GetTempPath(),
+                CreatedAt = now,
+            };
+            db.Organizations.Add(org);
+            db.Departments.Add(department);
+        }
+        db.Users.Add(user);
+        db.DepartmentMembers.Add(new DepartmentMember
+        {
+            Id = Guid.NewGuid(),
+            DepartmentId = departmentId,
+            UserId = user.Id,
+            Role = role,
+            JoinedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwtService.GenerateAccessToken(user));
+        return (client, departmentId, user.Id);
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responder(request));
     }
 }

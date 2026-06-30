@@ -52,6 +52,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>, 
 {
     private readonly SqliteConnection _keepAlive;
 
+    public string ImageAssetRoot { get; } = Path.Combine(Path.GetTempPath(), "llmwiki-image-assets-tests", Guid.NewGuid().ToString("N"));
+    public HttpMessageHandler? OpenAiImagesHandler { get; set; }
+
     public TestWebApplicationFactory()
     {
         _keepAlive = new SqliteConnection("DataSource=:memory:");
@@ -64,6 +67,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>, 
         builder.UseSetting("Jwt:Issuer", "llmwiki");
         builder.UseSetting("Jwt:Audience", "llmwiki");
         builder.UseSetting("WikiProjects:RootPath", Path.GetTempPath());
+        builder.UseSetting("ImageAssets:RootPath", ImageAssetRoot);
         builder.UseSetting("DataProtection:KeysPath", Path.Combine(Path.GetTempPath(), "llmwiki-test-keys"));
         builder.UseEnvironment("Testing");
 
@@ -84,6 +88,13 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>, 
                 // Strip PostgreSQL SQL-function defaults (gen_random_uuid, now(), etc.)
                 options.ReplaceService<IModelCustomizer, TestSqliteModelCustomizer>();
             });
+
+            if (OpenAiImagesHandler is not null)
+            {
+                services.AddTransient(_ => OpenAiImagesHandler);
+                services.AddHttpClient<LlmWiki.Api.Infrastructure.ImageGeneration.OpenAiImagesClient>()
+                    .ConfigurePrimaryHttpMessageHandler(sp => sp.GetRequiredService<HttpMessageHandler>());
+            }
         });
     }
 
@@ -91,5 +102,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>, 
     {
         await base.DisposeAsync();
         await _keepAlive.DisposeAsync();
+        if (Directory.Exists(ImageAssetRoot))
+            Directory.Delete(ImageAssetRoot, recursive: true);
     }
 }
