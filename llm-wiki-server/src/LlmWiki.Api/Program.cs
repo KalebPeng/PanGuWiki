@@ -1,6 +1,7 @@
 using LlmWiki.Api.Hubs;
 using LlmWiki.Api.Infrastructure;
 using LlmWiki.Api.Infrastructure.EmbeddingClient;
+using LlmWiki.Api.Infrastructure.ImageAssets;
 using LlmWiki.Api.Infrastructure.IngestWorker;
 using LlmWiki.Api.Infrastructure.LlmClient;
 using LlmWiki.Api.Modules.Identity;
@@ -87,7 +88,9 @@ builder.Services.AddSingleton<OfficeExtractService>();
 builder.Services.AddSingleton<VectorService>();
 builder.Services.Configure<WikiProjectsOptions>(builder.Configuration.GetSection("WikiProjects"));
 builder.Services.Configure<CloudWikiOptions>(builder.Configuration.GetSection("LlmWikiCloud"));
+builder.Services.Configure<ImageAssetOptions>(builder.Configuration.GetSection("ImageAssets"));
 builder.Services.AddSingleton<CloudWikiService>();
+builder.Services.AddSingleton<ImageAssetStorage>();
 builder.Services.AddScoped<ClaudeWebSocket>();
 
 // DataProtection — key ring must be persisted, otherwise container rebuilds cannot decrypt DB-stored keys
