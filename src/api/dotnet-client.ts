@@ -225,13 +225,32 @@ export function deleteGeneratedImageAsset(deptId: string, imageId: string): Prom
 
 export function getGeneratedImageAssetContentUrl(
   deptId: string,
-  imageId: string,
-  token?: string
+  imageId: string
 ): string {
   const path = generatedImagesPath(deptId, `/${encodeURIComponent(imageId)}/content`)
-  const authToken = token ?? (typeof localStorage === 'undefined' ? '' : localStorage.getItem('llmwiki:auth:token') ?? '')
-  if (!authToken) return `${BASE_URL}${path}`
-  return `${BASE_URL}${path}?token=${encodeURIComponent(authToken)}`
+  return `${BASE_URL}${path}`
+}
+
+export async function fetchGeneratedImageAssetContent(deptId: string, imageId: string): Promise<Blob> {
+  const path = generatedImagesPath(deptId, `/${encodeURIComponent(imageId)}/content`)
+  let res = await fetch(`${BASE_URL}${path}`, { headers: { ...getAuthHeader() } })
+  if (res.status === 401) {
+    const newToken = await tryRefreshToken()
+    if (newToken) {
+      res = await fetch(`${BASE_URL}${path}`, { headers: { Authorization: `Bearer ${newToken}` } })
+    }
+    if (res.status === 401) {
+      handleUnauthorized()
+      throw new Error('Unauthorized')
+    }
+  }
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.blob()
+}
+
+export async function createGeneratedImageAssetObjectUrl(deptId: string, imageId: string): Promise<string> {
+  const blob = await fetchGeneratedImageAssetContent(deptId, imageId)
+  return URL.createObjectURL(blob)
 }
 
 /** 在新标签页打开文件预览（PDF/Excel/Word → 后端渲染） */

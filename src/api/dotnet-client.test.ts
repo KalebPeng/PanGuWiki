@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
+  createGeneratedImageAssetObjectUrl,
   deleteGeneratedImageAsset,
+  fetchGeneratedImageAssetContent,
   generateDepartmentImages,
   getGeneratedImageAssetContentUrl,
   getImageGenerationConfig,
@@ -133,7 +135,7 @@ describe('dotnet-client', () => {
     )
   })
 
-  it('generates, lists, deletes, and builds content URLs for image assets', async () => {
+  it('generates, lists, deletes, and builds raw content URLs for image assets', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         new Response(
@@ -165,7 +167,7 @@ describe('dotnet-client', () => {
     })
     const listed = await listGeneratedImageAssets('dept-1')
     await deleteGeneratedImageAsset('dept-1', 'image-1')
-    const contentUrl = getGeneratedImageAssetContentUrl('dept-1', 'image-1', 'token 1')
+    const contentUrl = getGeneratedImageAssetContentUrl('dept-1', 'image-1')
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
@@ -192,8 +194,40 @@ describe('dotnet-client', () => {
     )
     expect(generated.images[0].content_url).toBe('/api/departments/dept-1/images/image-1/content')
     expect(listed.images).toEqual([])
-    expect(contentUrl).toBe(
-      `${BASE_URL}/api/departments/dept-1/images/image-1/content?token=token%201`
+    expect(contentUrl).toBe(`${BASE_URL}/api/departments/dept-1/images/image-1/content`)
+    expect(contentUrl).not.toContain('token=')
+  })
+
+  it('fetches image asset content with bearer auth', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => (
+      key === 'llmwiki:auth:token' ? 'access-token' : null
+    ))
+    const blob = new Blob(['png-bytes'], { type: 'image/png' })
+    vi.mocked(fetch).mockResolvedValue(new Response(blob, { status: 200 }))
+
+    const result = await fetchGeneratedImageAssetContent('dept-1', 'image-1')
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${BASE_URL}/api/departments/dept-1/images/image-1/content`,
+      { headers: { Authorization: 'Bearer access-token' } }
     )
+    expect(result.type).toBe('image/png')
+    expect(await result.text()).toBe('png-bytes')
+  })
+
+  it('creates object URLs for image asset content', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => (
+      key === 'llmwiki:auth:token' ? 'access-token' : null
+    ))
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:generated-image'),
+    })
+    const blob = new Blob(['png-bytes'], { type: 'image/png' })
+    vi.mocked(fetch).mockResolvedValue(new Response(blob, { status: 200 }))
+
+    const result = await createGeneratedImageAssetObjectUrl('dept-1', 'image-1')
+
+    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(result).toBe('blob:generated-image')
   })
 })
