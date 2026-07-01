@@ -21,6 +21,7 @@ import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { DeptSettingsPage } from "@/pages/DeptSettingsPage"
 import { WikiDashboardPage } from "@/pages/WikiDashboardPage"
+import { ImageGenerationPage } from "@/pages/ImageGenerationPage"
 
 import type { WikiProject } from "@/types/wiki"
 import type { ProjectLlmSettings } from "@/lib/project-llm-settings"
@@ -479,6 +480,7 @@ function DeptApp() {
         />
       } />
       <Route path="settings/*" element={<DeptSettingsPage />} />
+      <Route path="images" element={<ImageGenerationPage deptId={deptId!} />} />
       <Route path="*" element={
         <AppLayout
           onSwitchProject={() => navigate(`/d/${deptId}`)}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import {
-  BookOpen, Command, Users, Settings, ChevronUp,
+  BookOpen, Command, Users, Settings, ChevronUp, ImagePlus,
   Building2, Check, LogOut, ArrowUpRight,
   FileText, Folder, TrendingUp, AlertCircle,
   ShieldCheck as ShieldCheckIcon,
@@ -14,7 +14,8 @@ import { DeptSettingsContent } from "@/pages/DeptSettingsPage"
 import { AdminUsersPage } from "@/pages/admin/AdminUsersPage"
 import { AdminOrgsPage } from "@/pages/admin/AdminOrgsPage"
 import { AdminOrgDetailPage } from "@/pages/admin/AdminOrgDetailPage"
-type DashboardView = "home" | "settings" | "admin"
+import { getDashboardNavItems, type DashboardNavItemId } from "@/pages/dashboard-navigation"
+type DashboardView = DashboardNavItemId | "settings" | "admin"
 
 interface Props {
   deptId: string
@@ -170,7 +171,7 @@ function DeptDropdown({
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 
-function DashboardSidebar({
+export function DashboardSidebar({
   deptId,
   activeView,
   onChangeView,
@@ -179,6 +180,7 @@ function DashboardSidebar({
   activeView: DashboardView
   onChangeView: (v: DashboardView) => void
 }) {
+  const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const activeDept = useOrgStore((s) => s.activeDept)
   const orgs = useOrgStore((s) => s.orgs)
@@ -190,6 +192,10 @@ function DashboardSidebar({
   const org = orgs.find((o) => activeDept && o.id === activeDept.orgId)
   const initials = user?.displayName?.slice(0, 1) ?? "?"
   const col = avatarColor(user?.displayName ?? "")
+  const navIcons = {
+    home: BookOpen,
+    images: ImagePlus,
+  }
 
   // 查询当前用户在本部门的角色
   useEffect(() => {
@@ -225,18 +231,27 @@ function DashboardSidebar({
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2.5 py-1.5">
-        {/* Wiki 知识库 */}
-        <button
-          onClick={() => onChangeView("home")}
-          className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] transition-colors ${
-            activeView === "home"
-              ? "bg-[#ECECE8] font-medium text-[#1A1A2E]"
-              : "text-[#5C5C66] hover:bg-[#F2F2F0] hover:text-[#1A1A2E]"
-          }`}
-        >
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center"><BookOpen size={15} /></span>
-          <span className="flex-1 text-left">Wiki 知识库</span>
-        </button>
+        {getDashboardNavItems(deptId).map((item) => {
+          const Icon = navIcons[item.id]
+          return (
+            <button
+              key={item.id}
+              onClick={() => {
+                if (item.id === "home") onChangeView("home")
+                navigate(item.path)
+              }}
+              disabled={item.disabled}
+              className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] transition-colors ${
+                activeView === item.id
+                  ? "bg-[#ECECE8] font-medium text-[#1A1A2E]"
+                  : "text-[#5C5C66] hover:bg-[#F2F2F0] hover:text-[#1A1A2E]"
+              }`}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Icon size={15} /></span>
+              <span className="flex-1 text-left">{item.label}</span>
+            </button>
+          )
+        })}
 
         {/* 任务中心 — 即将推出 */}
         <button disabled className="flex w-full cursor-not-allowed items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] text-[#B5B5BB] transition-colors">
