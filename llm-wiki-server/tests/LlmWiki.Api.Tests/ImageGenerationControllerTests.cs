@@ -115,6 +115,25 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task ConfigPut_AllowsSuperAdminWithoutDepartmentMembership()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (_, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "viewer", email: "member@example.com");
+        var superAdminClient = await CreateAuthenticatedSuperAdminClient(factory, email: "super@example.com");
+
+        var response = await superAdminClient.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
+        {
+            enabled = true,
+            base_url = "https://relay.example.com",
+            api_key = "sk-test-secret",
+            model = "gpt-image-1",
+            default_size = "1024x1024",
+        });
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task Generate_ReturnsBadRequest_WhenConfigMissing()
     {
         await using var factory = new TestWebApplicationFactory();
@@ -383,6 +402,33 @@ public class ImageGenerationControllerTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwtService.GenerateAccessToken(user));
         return (client, departmentId, user.Id);
+    }
+
+    private static async Task<HttpClient> CreateAuthenticatedSuperAdminClient(
+        TestWebApplicationFactory factory,
+        string email = "super@example.com")
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
+        var now = DateTime.UtcNow;
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            DisplayName = email,
+            PasswordHash = "unused",
+            IsActive = true,
+            IsSuperAdmin = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwtService.GenerateAccessToken(user));
+        return client;
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
