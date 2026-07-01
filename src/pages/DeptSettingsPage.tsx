@@ -347,7 +347,24 @@ interface ImageGenerationSettingsTabProps {
   deptId: string
 }
 
-const IMAGE_SIZE_OPTIONS = ['1024x1024', '1024x1536', '1536x1024'] as const
+const IMAGE_SIZE_OPTIONS = [
+  '1024x1024',
+  '1024x1536',
+  '1536x1024',
+  '9:16',
+  '2:3',
+  '3:4',
+  '4:5',
+  '1:1',
+  '5:4',
+  '4:3',
+  '3:2',
+  '16:9',
+  '21:9',
+  '9:21',
+  '1:2',
+  '2:1',
+] as const
 
 const EMPTY_IMAGE_CONFIG: Omit<ImageGenerationConfig, 'id'> = {
   enabled: false,

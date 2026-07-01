@@ -21,21 +21,18 @@ public class OpenAiImagesClient(HttpClient httpClient)
         string prompt,
         string size,
         int n,
+        IReadOnlyList<string>? imageUrls,
         CancellationToken ct)
     {
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var endpoint = normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? $"{normalizedBaseUrl}/images/generations"
             : $"{normalizedBaseUrl}/v1/images/generations";
+
+        var requestBody = BuildRequestBody(model, prompt, size, n, imageUrls);
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
-            Content = JsonContent.Create(new
-            {
-                model,
-                prompt,
-                size,
-                n,
-            }),
+            Content = JsonContent.Create(requestBody),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
@@ -114,6 +111,61 @@ public class OpenAiImagesClient(HttpClient httpClient)
             MaxImageBytes,
             "Image generation relay image was too large.",
             ct);
+    }
+
+    private static object BuildRequestBody(
+        string model,
+        string prompt,
+        string size,
+        int n,
+        IReadOnlyList<string>? imageUrls)
+    {
+        if (model.StartsWith("vidu/", StringComparison.OrdinalIgnoreCase))
+        {
+            return new
+            {
+                model,
+                prompt,
+                size = ToAspectRatio(size),
+                images = imageUrls ?? Array.Empty<string>(),
+            };
+        }
+
+        return new
+        {
+            model,
+            prompt,
+            size,
+            n,
+        };
+    }
+
+    private static string ToAspectRatio(string size)
+    {
+        var parts = size.Split('x', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 ||
+            !int.TryParse(parts[0], out var width) ||
+            !int.TryParse(parts[1], out var height) ||
+            width <= 0 ||
+            height <= 0)
+        {
+            return size;
+        }
+
+        static int Gcd(int a, int b)
+        {
+            while (b != 0)
+            {
+                var next = a % b;
+                a = b;
+                b = next;
+            }
+
+            return Math.Abs(a);
+        }
+
+        var gcd = Gcd(width, height);
+        return $"{width / gcd}:{height / gcd}";
     }
 
     private static async Task<byte[]> ReadBoundedContentAsync(

@@ -23,7 +23,7 @@ public record ImageGenerationConfigResponse(
     string Model,
     string DefaultSize);
 
-public record GenerateImagesRequest(string Prompt, string? Model, string? Size, int? N);
+public record GenerateImagesRequest(string Prompt, string? Model, string? Size, int? N, IReadOnlyList<string>? Images);
 
 public record GeneratedImageResponse(
     Guid Id,
@@ -120,12 +120,20 @@ public class ImageGenerationController(
         var model = string.IsNullOrWhiteSpace(request.Model) ? config.Model : request.Model.Trim();
         var size = string.IsNullOrWhiteSpace(request.Size) ? config.DefaultSize : request.Size.Trim();
         var prompt = request.Prompt.Trim();
+        var imageUrls = request.Images?
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url.Trim())
+            .ToList() ?? [];
+        if (model.StartsWith("vidu/", StringComparison.OrdinalIgnoreCase) && imageUrls.Count == 0)
+        {
+            return BadRequest(new { error = "Vidu image models require at least one reference image URL." });
+        }
         var apiKey = configService.DecryptIfNotEmpty(config.EncryptedApiKey);
 
         IReadOnlyList<GeneratedImagePayload> payloads;
         try
         {
-            payloads = await imagesClient.GenerateAsync(config.BaseUrl, apiKey, model, prompt, size, n, ct);
+            payloads = await imagesClient.GenerateAsync(config.BaseUrl, apiKey, model, prompt, size, n, imageUrls, ct);
         }
         catch (ImageGenerationRelayException ex)
         {

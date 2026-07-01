@@ -160,6 +160,7 @@ export interface GenerateImagesRequest {
   model?: string | null
   size?: string | null
   n?: number | null
+  images?: string[] | null
 }
 
 export interface GeneratedImageAsset {

@@ -334,6 +334,66 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task Generate_WithViduImageModel_SendsAspectRatioAndReferenceImages()
+    {
+        var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                using var json = JsonDocument.Parse(body);
+                var root = json.RootElement;
+                Assert.Equal("vidu/image-2", root.GetProperty("model").GetString());
+                Assert.Equal("Same style, different background", root.GetProperty("prompt").GetString());
+                Assert.Equal("1:1", root.GetProperty("size").GetString());
+                Assert.False(root.TryGetProperty("n", out _));
+                Assert.Equal("https://example.com/ref.jpg", root.GetProperty("images")[0].GetString());
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { b64_json = Convert.ToBase64String(expectedBytes) },
+                        },
+                    }),
+                };
+            }),
+        };
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId, model: "vidu/image-2");
+
+        var generate = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "Same style, different background",
+            size = "1024x1024",
+            images = new[] { "https://example.com/ref.jpg" },
+        });
+
+        generate.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Generate_WithViduImageModel_ReturnsBadRequest_WhenReferenceImagesMissing()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId, model: "vidu/image-2");
+
+        var response = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "Same style, different background",
+            size = "1024x1024",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("reference image", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ContentAndDelete_RejectAnotherUsersImage()
     {
         await using var factory = new TestWebApplicationFactory();
@@ -381,14 +441,15 @@ public class ImageGenerationControllerTests
     private static async Task PutConfig(
         HttpClient client,
         Guid deptId,
-        string baseUrl = "https://relay.example.com")
+        string baseUrl = "https://relay.example.com",
+        string model = "gpt-image-1")
     {
         var response = await client.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
         {
             enabled = true,
             base_url = baseUrl,
             api_key = "sk-test-secret",
-            model = "gpt-image-1",
+            model,
             default_size = "1024x1024",
         });
         response.EnsureSuccessStatusCode();

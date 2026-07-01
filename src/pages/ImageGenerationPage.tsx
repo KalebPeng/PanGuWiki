@@ -38,7 +38,24 @@ interface Props {
   deptId: string
 }
 
-const IMAGE_SIZES = ["1024x1024", "1024x1536", "1536x1024"] as const
+const IMAGE_SIZES = [
+  "1024x1024",
+  "1024x1536",
+  "1536x1024",
+  "9:16",
+  "2:3",
+  "3:4",
+  "4:5",
+  "1:1",
+  "5:4",
+  "4:3",
+  "3:2",
+  "16:9",
+  "21:9",
+  "9:21",
+  "1:2",
+  "2:1",
+] as const
 const DEFAULT_PROMPT =
   "一张适合知识库封面的简洁插画，清晰构图，柔和自然光，留出标题空间"
 
@@ -135,11 +152,19 @@ function formatDateTime(iso: string): string {
 }
 
 function parseSize(size: string): { width: number; height: number } {
-  const [width, height] = size.split("x").map((part) => Number.parseInt(part, 10))
+  const separator = size.includes(":") ? ":" : "x"
+  const [width, height] = size.split(separator).map((part) => Number.parseInt(part, 10))
   return {
     width: Number.isFinite(width) ? width : 1,
     height: Number.isFinite(height) ? height : 1,
   }
+}
+
+function parseReferenceImageUrls(value: string): string[] {
+  return value
+    .split(/[\n,]+/)
+    .map((url) => url.trim())
+    .filter(Boolean)
 }
 
 function aspectRatioClass(size: string): string {
@@ -250,8 +275,9 @@ export function ImageGenerationPage({ deptId }: Props) {
   const [objectUrls, setObjectUrls] = useState<ObjectUrlMap>({})
   const objectUrlsRef = useRef<ObjectUrlMap>({})
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
-  const [size, setSize] = useState<(typeof IMAGE_SIZES)[number]>("1024x1024")
+  const [size, setSize] = useState<string>("1024x1024")
   const [count, setCount] = useState(1)
+  const [referenceImageUrls, setReferenceImageUrls] = useState("")
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -267,7 +293,15 @@ export function ImageGenerationPage({ deptId }: Props) {
     () => (configChecked ? getImageGenerationConfigProblem(config) : null),
     [config, configChecked]
   )
-  const canGenerate = prompt.trim().length > 0 && !!config && !loading && !generating && !configProblem
+  const isViduModel = config?.model.toLowerCase().startsWith("vidu/") ?? false
+  const referenceImages = useMemo(() => parseReferenceImageUrls(referenceImageUrls), [referenceImageUrls])
+  const canGenerate =
+    prompt.trim().length > 0 &&
+    !!config &&
+    !loading &&
+    !generating &&
+    !configProblem &&
+    (!isViduModel || referenceImages.length > 0)
 
   useEffect(() => {
     objectUrlsRef.current = objectUrls
@@ -393,6 +427,7 @@ export function ImageGenerationPage({ deptId }: Props) {
         prompt: trimmedPrompt,
         size,
         n: clampImageCount(count),
+        images: referenceImages,
       })
       if (!mountedRef.current || deptIdRef.current !== requestDeptId || generateRequestRef.current !== requestId) return
       setAssets((current) => mergeGeneratedImageAssets(current, response.images))
@@ -539,7 +574,7 @@ export function ImageGenerationPage({ deptId }: Props) {
                     <select
                       id="image-size"
                       value={size}
-                      onChange={(event) => setSize(event.target.value as (typeof IMAGE_SIZES)[number])}
+                      onChange={(event) => setSize(event.target.value)}
                       className="h-9 w-full rounded-lg border border-[#E2E2DF] bg-white px-3 text-[13px] text-[#1A1A2E] outline-none focus:border-[#B8B8B2] focus:ring-3 focus:ring-[#EDEDEB]"
                     >
                       {IMAGE_SIZES.map((option) => (
@@ -561,6 +596,23 @@ export function ImageGenerationPage({ deptId }: Props) {
                     />
                   </div>
                 </div>
+
+                {isViduModel && (
+                  <div className="space-y-2">
+                    <Label htmlFor="reference-images" className="text-[#1A1A2E]">参考图 URL</Label>
+                    <textarea
+                      id="reference-images"
+                      value={referenceImageUrls}
+                      onChange={(event) => setReferenceImageUrls(event.target.value)}
+                      placeholder="https://example.com/ref.jpg"
+                      rows={3}
+                      className="min-h-[76px] w-full resize-y rounded-lg border border-[#E2E2DF] bg-white px-3 py-2.5 text-[13.5px] leading-relaxed text-[#1A1A2E] outline-none transition-colors placeholder:text-[#B5B5BB] focus:border-[#B8B8B2] focus:ring-3 focus:ring-[#EDEDEB]"
+                    />
+                    <p className="text-[12px] leading-relaxed text-[#8E8E94]">
+                      Vidu 图片模型需要至少一张参考图；多张可换行或用逗号分隔。
+                    </p>
+                  </div>
+                )}
 
                 <Button
                   type="submit"
