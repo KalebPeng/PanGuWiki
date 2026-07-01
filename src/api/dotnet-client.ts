@@ -181,6 +181,10 @@ function imageGenerationPath(deptId: string, suffix: string): string {
   return `/api/departments/${encodeURIComponent(deptId)}/image-generation${suffix}`
 }
 
+function generatedImagesPath(deptId: string, suffix = ''): string {
+  return `/api/departments/${encodeURIComponent(deptId)}/images${suffix}`
+}
+
 function stripConfigSecret(config: ImageGenerationConfig & { api_key?: unknown }): ImageGenerationConfig {
   const { api_key: _apiKey, ...safeConfig } = config
   return safeConfig
@@ -208,15 +212,15 @@ export function generateDepartmentImages(
   deptId: string,
   request: GenerateImagesRequest
 ): Promise<GeneratedImagesResponse> {
-  return httpPost<GeneratedImagesResponse>(imageGenerationPath(deptId, '/generate'), request)
+  return httpPost<GeneratedImagesResponse>(generatedImagesPath(deptId, '/generate'), request)
 }
 
 export function listGeneratedImageAssets(deptId: string): Promise<GeneratedImagesResponse> {
-  return httpGet<GeneratedImagesResponse>(imageGenerationPath(deptId, '/assets'))
+  return httpGet<GeneratedImagesResponse>(generatedImagesPath(deptId))
 }
 
 export function deleteGeneratedImageAsset(deptId: string, imageId: string): Promise<void> {
-  return httpDelete<void>(`${imageGenerationPath(deptId, '/assets')}/${encodeURIComponent(imageId)}`)
+  return httpDelete<void>(generatedImagesPath(deptId, `/${encodeURIComponent(imageId)}`))
 }
 
 export function getGeneratedImageAssetContentUrl(
@@ -224,7 +228,7 @@ export function getGeneratedImageAssetContentUrl(
   imageId: string,
   token?: string
 ): string {
-  const path = `${imageGenerationPath(deptId, '/assets')}/${encodeURIComponent(imageId)}/content`
+  const path = generatedImagesPath(deptId, `/${encodeURIComponent(imageId)}/content`)
   const authToken = token ?? (typeof localStorage === 'undefined' ? '' : localStorage.getItem('llmwiki:auth:token') ?? '')
   if (!authToken) return `${BASE_URL}${path}`
   return `${BASE_URL}${path}?token=${encodeURIComponent(authToken)}`

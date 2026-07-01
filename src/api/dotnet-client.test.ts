@@ -145,7 +145,7 @@ describe('dotnet-client', () => {
                 model: 'gpt-image-1',
                 size: '1024x1024',
                 created_at: '2026-06-30T12:00:00Z',
-                content_url: '/api/departments/dept-1/image-generation/assets/image-1/content',
+                content_url: '/api/departments/dept-1/images/image-1/content',
                 mime_type: 'image/png',
                 source_url: null,
               },
@@ -169,7 +169,7 @@ describe('dotnet-client', () => {
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
-      `${BASE_URL}/api/departments/dept-1/image-generation/generate`,
+      `${BASE_URL}/api/departments/dept-1/images/generate`,
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -182,18 +182,18 @@ describe('dotnet-client', () => {
     )
     expect(fetch).toHaveBeenNthCalledWith(
       2,
-      `${BASE_URL}/api/departments/dept-1/image-generation/assets`,
+      `${BASE_URL}/api/departments/dept-1/images`,
       expect.anything()
     )
     expect(fetch).toHaveBeenNthCalledWith(
       3,
-      `${BASE_URL}/api/departments/dept-1/image-generation/assets/image-1`,
+      `${BASE_URL}/api/departments/dept-1/images/image-1`,
       expect.objectContaining({ method: 'DELETE' })
     )
-    expect(generated.images[0].content_url).toBe('/api/departments/dept-1/image-generation/assets/image-1/content')
+    expect(generated.images[0].content_url).toBe('/api/departments/dept-1/images/image-1/content')
     expect(listed.images).toEqual([])
     expect(contentUrl).toBe(
-      `${BASE_URL}/api/departments/dept-1/image-generation/assets/image-1/content?token=token%201`
+      `${BASE_URL}/api/departments/dept-1/images/image-1/content?token=token%201`
     )
   })
 })
