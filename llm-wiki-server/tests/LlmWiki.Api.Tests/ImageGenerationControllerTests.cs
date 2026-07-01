@@ -134,6 +134,28 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task ConfigPut_AllowsSuperAdminWithNonAdminDepartmentMembership()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (superAdminClient, deptId, _) = await CreateAuthenticatedDepartmentClient(
+            factory,
+            "editor",
+            email: "super-member@example.com",
+            isSuperAdmin: true);
+
+        var response = await superAdminClient.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
+        {
+            enabled = true,
+            base_url = "https://relay.example.com",
+            api_key = "sk-test-secret",
+            model = "gpt-image-1",
+            default_size = "1024x1024",
+        });
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task Generate_ReturnsBadRequest_WhenConfigMissing()
     {
         await using var factory = new TestWebApplicationFactory();
@@ -345,7 +367,8 @@ public class ImageGenerationControllerTests
         TestWebApplicationFactory factory,
         string role,
         Guid? deptId = null,
-        string email = "user@example.com")
+        string email = "user@example.com",
+        bool isSuperAdmin = false)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -358,6 +381,7 @@ public class ImageGenerationControllerTests
             DisplayName = email,
             PasswordHash = "unused",
             IsActive = true,
+            IsSuperAdmin = isSuperAdmin,
             CreatedAt = now,
             UpdatedAt = now,
         };

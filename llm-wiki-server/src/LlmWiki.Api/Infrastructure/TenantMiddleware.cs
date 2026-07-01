@@ -10,6 +10,9 @@ public class TenantMiddleware(RequestDelegate next)
             ctx.Request.RouteValues.TryGetValue("deptId", out var raw) &&
             Guid.TryParse(raw?.ToString(), out var deptId))
         {
+            var isSuperAdmin = await db.Users
+                .AnyAsync(u => u.Id == currentUser.UserId && u.IsSuperAdmin, ctx.RequestAborted);
+
             var member = await db.DepartmentMembers
                 .Include(m => m.Department)
                 .FirstOrDefaultAsync(
@@ -19,13 +22,12 @@ public class TenantMiddleware(RequestDelegate next)
             if (member is not null && member.Department is not null)
             {
                 var tc = ctx.RequestServices.GetRequiredService<TenantContext>();
-                tc.Set(deptId, member.Department.WikiProjectPath, member.Role);
+                tc.Set(deptId, member.Department.WikiProjectPath, isSuperAdmin ? "admin" : member.Role);
             }
-            else
+            else if (isSuperAdmin)
             {
-                var superAdminDept = await db.Users
-                    .Where(u => u.Id == currentUser.UserId && u.IsSuperAdmin)
-                    .SelectMany(_ => db.Departments.Where(d => d.Id == deptId))
+                var superAdminDept = await db.Departments
+                    .Where(d => d.Id == deptId)
                     .FirstOrDefaultAsync(ctx.RequestAborted);
 
                 if (superAdminDept is not null)
