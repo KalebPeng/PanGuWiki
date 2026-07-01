@@ -24,7 +24,10 @@
   "welcome": {
     "newProject": "新建项目",
     "openProject": "打开项目",
-    "recentProjects": "最近项目"
+    "recentProjects": "最近项目",
+    "serverProjects": "服务器项目",
+    "loadingServerProjects": "正在加载服务器项目...",
+    "serverProjectsRoot": "当前根目录：{{root}}"
   },
   "project": {
     "createTitle": "新建 Wiki 项目",
