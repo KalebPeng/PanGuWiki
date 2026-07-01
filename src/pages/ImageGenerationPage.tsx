@@ -255,9 +255,13 @@ export function ImageGenerationPage({ deptId }: Props) {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState<string | null>(null)
   const [previewAsset, setPreviewAsset] = useState<GeneratedImageAsset | null>(null)
+  const mountedRef = useRef(false)
+  const deptIdRef = useRef(deptId)
+  const refreshRequestRef = useRef(0)
+  const generateRequestRef = useRef(0)
 
   const configProblem = useMemo(
     () => (configChecked ? getImageGenerationConfigProblem(config) : null),
@@ -270,13 +274,21 @@ export function ImageGenerationPage({ deptId }: Props) {
   }, [objectUrls])
 
   useEffect(() => {
+    mountedRef.current = true
     return () => {
+      mountedRef.current = false
       for (const url of Object.values(objectUrlsRef.current)) {
         URL.revokeObjectURL(url)
       }
       objectUrlsRef.current = {}
     }
   }, [])
+
+  useEffect(() => {
+    deptIdRef.current = deptId
+    refreshRequestRef.current += 1
+    generateRequestRef.current += 1
+  }, [deptId])
 
   useEffect(() => {
     let cancelled = false
@@ -350,14 +362,19 @@ export function ImageGenerationPage({ deptId }: Props) {
   }, [assets, deptId])
 
   async function refreshAssets() {
+    const requestId = ++refreshRequestRef.current
+    const requestDeptId = deptId
     setRefreshing(true)
     setError(null)
     try {
-      const response = await listGeneratedImageAssets(deptId)
+      const response = await listGeneratedImageAssets(requestDeptId)
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId || refreshRequestRef.current !== requestId) return
       setAssets(response.images)
     } catch (err) {
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId || refreshRequestRef.current !== requestId) return
       setError(err instanceof Error ? err.message : "刷新素材库失败")
     } finally {
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId || refreshRequestRef.current !== requestId) return
       setRefreshing(false)
     }
   }
@@ -367,18 +384,23 @@ export function ImageGenerationPage({ deptId }: Props) {
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt || configProblem) return
 
+    const requestId = ++generateRequestRef.current
+    const requestDeptId = deptId
     setGenerating(true)
     setError(null)
     try {
-      const response = await generateDepartmentImages(deptId, {
+      const response = await generateDepartmentImages(requestDeptId, {
         prompt: trimmedPrompt,
         size,
         n: clampImageCount(count),
       })
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId || generateRequestRef.current !== requestId) return
       setAssets((current) => mergeGeneratedImageAssets(current, response.images))
     } catch (err) {
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId || generateRequestRef.current !== requestId) return
       setError(err instanceof Error ? err.message : "生成图片失败")
     } finally {
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId || generateRequestRef.current !== requestId) return
       setGenerating(false)
     }
   }
@@ -386,16 +408,24 @@ export function ImageGenerationPage({ deptId }: Props) {
   async function handleDelete(asset: GeneratedImageAsset) {
     if (!window.confirm("确认从素材库删除这张图片吗？")) return
 
-    setDeletingId(asset.id)
+    const requestDeptId = deptId
+    setDeletingIds((current) => new Set(current).add(asset.id))
     setError(null)
     try {
-      await deleteGeneratedImageAsset(deptId, asset.id)
+      await deleteGeneratedImageAsset(requestDeptId, asset.id)
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId) return
       setPreviewAsset((current) => (current?.id === asset.id ? null : current))
       setAssets((current) => current.filter((item) => item.id !== asset.id))
     } catch (err) {
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId) return
       setError(err instanceof Error ? err.message : "删除图片失败")
     } finally {
-      setDeletingId(null)
+      if (!mountedRef.current || deptIdRef.current !== requestDeptId) return
+      setDeletingIds((current) => {
+        const next = new Set(current)
+        next.delete(asset.id)
+        return next
+      })
     }
   }
 
@@ -581,7 +611,7 @@ export function ImageGenerationPage({ deptId }: Props) {
                       key={asset.id}
                       asset={asset}
                       objectUrl={objectUrls[asset.id]}
-                      deleting={deletingId === asset.id}
+                      deleting={deletingIds.has(asset.id)}
                       onPreview={() => setPreviewAsset(asset)}
                       onDownload={() => handleDownload(asset)}
                       onDelete={() => handleDelete(asset)}
