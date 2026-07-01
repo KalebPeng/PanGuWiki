@@ -19,6 +19,7 @@ import {
   getImageGenerationConfig,
   listGeneratedImageAssets,
   type GeneratedImageAsset,
+  type GeneratedImagesResponse,
   type ImageGenerationConfig,
 } from "@/api/dotnet-client"
 import { Button } from "@/components/ui/button"
@@ -42,6 +43,22 @@ const DEFAULT_PROMPT =
   "一张适合知识库封面的简洁插画，清晰构图，柔和自然光，留出标题空间"
 
 type ObjectUrlMap = Record<string, string>
+
+interface ImageGenerationPageLoaders {
+  loadConfig: () => Promise<ImageGenerationConfig>
+  loadAssets: () => Promise<GeneratedImagesResponse>
+}
+
+interface ImageGenerationPageData {
+  config: ImageGenerationConfig | null
+  assets: GeneratedImageAsset[]
+  configError: string | null
+  assetsError: string | null
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback
+}
 
 export function clampImageCount(value: number): number {
   if (!Number.isFinite(value)) return 1
@@ -75,7 +92,9 @@ export function revokeRemovedObjectUrls(
 export function getImageGenerationConfigProblem(
   config: ImageGenerationConfig | null
 ): string | null {
-  if (!config) return null
+  if (!config) {
+    return "AI 图片生成尚未配置。请前往工作区设置完成图片生成配置后再生成。"
+  }
   if (!config.enabled) {
     return "AI 图片生成未启用。请前往工作区设置开启图片生成并保存配置。"
   }
@@ -83,6 +102,27 @@ export function getImageGenerationConfigProblem(
     return "AI 图片生成缺少 API Key。请前往工作区设置补充密钥后再生成。"
   }
   return null
+}
+
+export async function loadImageGenerationPageData({
+  loadConfig,
+  loadAssets,
+}: ImageGenerationPageLoaders): Promise<ImageGenerationPageData> {
+  const [configResult, assetsResult] = await Promise.allSettled([
+    loadConfig(),
+    loadAssets(),
+  ])
+
+  return {
+    config: configResult.status === "fulfilled" ? configResult.value : null,
+    assets: assetsResult.status === "fulfilled" ? assetsResult.value.images : [],
+    configError: configResult.status === "rejected"
+      ? errorMessage(configResult.reason, "加载图片生成配置失败")
+      : null,
+    assetsError: assetsResult.status === "rejected"
+      ? errorMessage(assetsResult.reason, "加载素材库失败")
+      : null,
+  }
 }
 
 function formatDateTime(iso: string): string {
@@ -205,6 +245,7 @@ function ImageTile({
 export function ImageGenerationPage({ deptId }: Props) {
   const navigate = useNavigate()
   const [config, setConfig] = useState<ImageGenerationConfig | null>(null)
+  const [configChecked, setConfigChecked] = useState(false)
   const [assets, setAssets] = useState<GeneratedImageAsset[]>([])
   const [objectUrls, setObjectUrls] = useState<ObjectUrlMap>({})
   const objectUrlsRef = useRef<ObjectUrlMap>({})
@@ -218,7 +259,10 @@ export function ImageGenerationPage({ deptId }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [previewAsset, setPreviewAsset] = useState<GeneratedImageAsset | null>(null)
 
-  const configProblem = useMemo(() => getImageGenerationConfigProblem(config), [config])
+  const configProblem = useMemo(
+    () => (configChecked ? getImageGenerationConfigProblem(config) : null),
+    [config, configChecked]
+  )
   const canGenerate = prompt.trim().length > 0 && !!config && !loading && !generating && !configProblem
 
   useEffect(() => {
@@ -240,19 +284,24 @@ export function ImageGenerationPage({ deptId }: Props) {
     async function loadPage() {
       setLoading(true)
       setError(null)
+      setConfigChecked(false)
       try {
-        const [nextConfig, imageResponse] = await Promise.all([
-          getImageGenerationConfig(deptId),
-          listGeneratedImageAssets(deptId),
-        ])
+        const result = await loadImageGenerationPageData({
+          loadConfig: () => getImageGenerationConfig(deptId),
+          loadAssets: () => listGeneratedImageAssets(deptId),
+        })
         if (cancelled) return
-        setConfig(nextConfig)
-        setAssets(imageResponse.images)
-        const configuredSize = IMAGE_SIZES.find((option) => option === nextConfig.default_size)
+        setConfig(result.config)
+        setConfigChecked(true)
+        setAssets(result.assets)
+        if (result.assetsError) setError(result.assetsError)
+        const configuredSize = result.config
+          ? IMAGE_SIZES.find((option) => option === result.config?.default_size)
+          : null
         if (configuredSize) setSize(configuredSize)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "加载图片生成配置失败")
+          setError(errorMessage(err, "加载图片生成页面失败"))
         }
       } finally {
         if (!cancelled) setLoading(false)

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   clampImageCount,
   getImageGenerationConfigProblem,
+  loadImageGenerationPageData,
   mergeGeneratedImageAssets,
   revokeRemovedObjectUrls,
 } from "./ImageGenerationPage"
@@ -68,5 +69,25 @@ describe("ImageGenerationPage helpers", () => {
     expect(getImageGenerationConfigProblem(config({ enabled: false }))).toContain("工作区设置")
     expect(getImageGenerationConfigProblem(config({ has_api_key: false }))).toContain("API Key")
     expect(getImageGenerationConfigProblem(config({}))).toBeNull()
+  })
+
+  it("reports missing config as a settings CTA problem", () => {
+    expect(getImageGenerationConfigProblem(null)).toContain("工作区设置")
+  })
+
+  it("loads asset library entries even when config loading fails", async () => {
+    const images = [asset("existing")]
+
+    await expect(
+      loadImageGenerationPageData({
+        loadConfig: () => Promise.reject(new Error("Not Found")),
+        loadAssets: () => Promise.resolve({ images }),
+      })
+    ).resolves.toMatchObject({
+      config: null,
+      assets: images,
+      configError: "Not Found",
+      assetsError: null,
+    })
   })
 })
