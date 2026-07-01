@@ -138,6 +138,98 @@ export async function httpPatch<T>(path: string, body?: unknown): Promise<T> {
   return parseBody<T>(res)
 }
 
+export interface ImageGenerationConfig {
+  id: string
+  enabled: boolean
+  base_url: string
+  has_api_key: boolean
+  model: string
+  default_size: string
+}
+
+export interface UpdateImageGenerationConfigRequest {
+  enabled: boolean
+  base_url: string
+  api_key?: string | null
+  model: string
+  default_size: string
+}
+
+export interface GenerateImagesRequest {
+  prompt: string
+  model?: string | null
+  size?: string | null
+  n?: number | null
+}
+
+export interface GeneratedImageAsset {
+  id: string
+  prompt: string
+  model: string
+  size: string
+  created_at: string
+  content_url: string
+  mime_type: string
+  source_url?: string | null
+}
+
+export interface GeneratedImagesResponse {
+  images: GeneratedImageAsset[]
+}
+
+function imageGenerationPath(deptId: string, suffix: string): string {
+  return `/api/departments/${encodeURIComponent(deptId)}/image-generation${suffix}`
+}
+
+function stripConfigSecret(config: ImageGenerationConfig & { api_key?: unknown }): ImageGenerationConfig {
+  const { api_key: _apiKey, ...safeConfig } = config
+  return safeConfig
+}
+
+export async function getImageGenerationConfig(deptId: string): Promise<ImageGenerationConfig> {
+  const config = await httpGet<ImageGenerationConfig & { api_key?: unknown }>(
+    imageGenerationPath(deptId, '/config')
+  )
+  return stripConfigSecret(config)
+}
+
+export async function updateImageGenerationConfig(
+  deptId: string,
+  request: UpdateImageGenerationConfigRequest
+): Promise<ImageGenerationConfig> {
+  const config = await httpPut<ImageGenerationConfig & { api_key?: unknown }>(
+    imageGenerationPath(deptId, '/config'),
+    request
+  )
+  return stripConfigSecret(config)
+}
+
+export function generateDepartmentImages(
+  deptId: string,
+  request: GenerateImagesRequest
+): Promise<GeneratedImagesResponse> {
+  return httpPost<GeneratedImagesResponse>(imageGenerationPath(deptId, '/generate'), request)
+}
+
+export function listGeneratedImageAssets(deptId: string): Promise<GeneratedImagesResponse> {
+  return httpGet<GeneratedImagesResponse>(imageGenerationPath(deptId, '/assets'))
+}
+
+export function deleteGeneratedImageAsset(deptId: string, imageId: string): Promise<void> {
+  return httpDelete<void>(`${imageGenerationPath(deptId, '/assets')}/${encodeURIComponent(imageId)}`)
+}
+
+export function getGeneratedImageAssetContentUrl(
+  deptId: string,
+  imageId: string,
+  token?: string
+): string {
+  const path = `${imageGenerationPath(deptId, '/assets')}/${encodeURIComponent(imageId)}/content`
+  const authToken = token ?? (typeof localStorage === 'undefined' ? '' : localStorage.getItem('llmwiki:auth:token') ?? '')
+  if (!authToken) return `${BASE_URL}${path}`
+  return `${BASE_URL}${path}?token=${encodeURIComponent(authToken)}`
+}
+
 /** 在新标签页打开文件预览（PDF/Excel/Word → 后端渲染） */
 export function openFilePreview(filePath: string): void {
   const token = localStorage.getItem('llmwiki:auth:token') ?? ''
