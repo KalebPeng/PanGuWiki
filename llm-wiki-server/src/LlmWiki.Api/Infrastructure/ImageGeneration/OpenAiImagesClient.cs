@@ -23,7 +23,10 @@ public class OpenAiImagesClient(HttpClient httpClient)
         int n,
         CancellationToken ct)
     {
-        var endpoint = $"{baseUrl.TrimEnd('/')}/v1/images/generations";
+        var normalizedBaseUrl = baseUrl.TrimEnd('/');
+        var endpoint = normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? $"{normalizedBaseUrl}/images/generations"
+            : $"{normalizedBaseUrl}/v1/images/generations";
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = JsonContent.Create(new

@@ -300,6 +300,40 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task Generate_WithBaseUrlEndingInV1_DoesNotDuplicateVersionSegment()
+    {
+        var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal("https://relay.example.com/v1/images/generations", request.RequestUri?.ToString());
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { b64_json = Convert.ToBase64String(expectedBytes) },
+                        },
+                    }),
+                };
+            }),
+        };
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId, baseUrl: "https://relay.example.com/v1");
+
+        var generate = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "A quiet product photo",
+            n = 1,
+        });
+
+        generate.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task ContentAndDelete_RejectAnotherUsersImage()
     {
         await using var factory = new TestWebApplicationFactory();
@@ -344,12 +378,15 @@ public class ImageGenerationControllerTests
         return new AppDbContext(options);
     }
 
-    private static async Task PutConfig(HttpClient client, Guid deptId)
+    private static async Task PutConfig(
+        HttpClient client,
+        Guid deptId,
+        string baseUrl = "https://relay.example.com")
     {
         var response = await client.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
         {
             enabled = true,
-            base_url = "https://relay.example.com",
+            base_url = baseUrl,
             api_key = "sk-test-secret",
             model = "gpt-image-1",
             default_size = "1024x1024",
