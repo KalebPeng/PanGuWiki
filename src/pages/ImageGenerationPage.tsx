@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom"
 
+import { getDashboardViewPath } from "@/pages/dashboard-navigation"
 import { DashboardSidebar } from "@/pages/WikiDashboardPage"
 
 interface Props {
@@ -18,9 +19,9 @@ export function ImageGenerationPage({ deptId }: Props) {
         deptId={deptId}
         activeView="images"
         onChangeView={(view) => {
-          if (view === "home") navigate(`/d/${deptId}`)
-          if (view === "settings") navigate(`/d/${deptId}/settings`)
-          if (view === "admin") navigate(`/d/${deptId}`)
+          if (view === "home" || view === "settings" || view === "admin") {
+            navigate(getDashboardViewPath(deptId, view))
+          }
         }}
       />
 

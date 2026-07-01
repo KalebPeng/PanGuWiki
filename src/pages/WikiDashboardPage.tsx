@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import {
   BookOpen, Command, Users, Settings, ChevronUp, ImagePlus,
   Building2, Check, LogOut, ArrowUpRight,
@@ -14,7 +14,7 @@ import { DeptSettingsContent } from "@/pages/DeptSettingsPage"
 import { AdminUsersPage } from "@/pages/admin/AdminUsersPage"
 import { AdminOrgsPage } from "@/pages/admin/AdminOrgsPage"
 import { AdminOrgDetailPage } from "@/pages/admin/AdminOrgDetailPage"
-import { getDashboardNavItems, type DashboardNavItemId } from "@/pages/dashboard-navigation"
+import { getDashboardNavItems, type DashboardNavItemId, type DashboardRouteView } from "@/pages/dashboard-navigation"
 type DashboardView = DashboardNavItemId | "settings" | "admin"
 
 interface Props {
@@ -473,7 +473,11 @@ function AdminView() {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export function WikiDashboardPage({ deptId, onEnterWiki }: Props) {
-  const [activeView, setActiveView] = useState<DashboardView>("home")
+  const [searchParams] = useSearchParams()
+  const requestedView = searchParams.get("view")
+  const initialView: DashboardRouteView =
+    requestedView === "settings" || requestedView === "admin" ? requestedView : "home"
+  const [activeView, setActiveView] = useState<DashboardView>(initialView)
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [memberCount, setMemberCount] = useState<number | null>(null)
   const [weeklyTasks, setWeeklyTasks] = useState<number | null>(null)

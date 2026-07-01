@@ -1,4 +1,5 @@
 export type DashboardNavItemId = "home" | "images"
+export type DashboardRouteView = "home" | "settings" | "admin"
 
 export interface DashboardNavItem {
   id: DashboardNavItemId
@@ -22,4 +23,9 @@ export function getDashboardNavItems(deptId: string): DashboardNavItem[] {
       disabled: false,
     },
   ]
+}
+
+export function getDashboardViewPath(deptId: string, view: DashboardRouteView): string {
+  if (view === "home") return `/d/${deptId}`
+  return `/d/${deptId}?view=${view}`
 }

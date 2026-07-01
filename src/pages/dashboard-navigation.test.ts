@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { getDashboardNavItems } from "./dashboard-navigation"
+import { getDashboardNavItems, getDashboardViewPath } from "./dashboard-navigation"
 
 describe("getDashboardNavItems", () => {
   it("places AI image generation directly below the wiki item", () => {
@@ -19,5 +19,10 @@ describe("getDashboardNavItems", () => {
       disabled: false,
       path: "/d/dept-1/images",
     })
+  })
+
+  it("builds dashboard handoff routes for settings and admin views", () => {
+    expect(getDashboardViewPath("dept-1", "settings")).toBe("/d/dept-1?view=settings")
+    expect(getDashboardViewPath("dept-1", "admin")).toBe("/d/dept-1?view=admin")
   })
 })
