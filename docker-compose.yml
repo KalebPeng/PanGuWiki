@@ -21,6 +21,7 @@ services:
       ASPNETCORE_URLS: "http://0.0.0.0:5200"
       Cors__Origins__0: "${PUBLIC_ORIGIN:-http://localhost:8080}"
       WikiProjects__RootPath: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
+      ImageAssets__RootPath: "${IMAGE_ASSETS_ROOT_PATH_INTERNAL:-/data/image-assets}"
       LlmWikiCloud__ApiKey: "${LLM_WIKI_API_KEY}"
       LlmWikiCloud__Projects__proj_123: "${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}/PanGu-Wiki"
       Qdrant__Host: "qdrant"
@@ -35,6 +36,7 @@ services:
       DataProtection__KeysPath: /data/keys
     volumes:
       - "${WIKI_ROOT_PATH:-./data/wiki}:${WIKI_ROOT_PATH_INTERNAL:-/data/wiki}"
+      - image_assets:${IMAGE_ASSETS_ROOT_PATH_INTERNAL:-/data/image-assets}
       - dp_keys:/data/keys
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5200/api/health/ingest-worker"]
@@ -78,3 +80,4 @@ volumes:
   qdrant_storage:
   pgdata:
   dp_keys:
+  image_assets:

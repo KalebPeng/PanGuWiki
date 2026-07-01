@@ -29,9 +29,12 @@ WEB_PORT=8080
 PUBLIC_ORIGIN=https://wiki.example.com
 LLM_WIKI_API_KEY=replace-with-a-long-random-token
 WIKI_ROOT_PATH=/srv/wiki
+IMAGE_ASSETS_ROOT_PATH_INTERNAL=/data/image-assets
 ```
 
 `WIKI_ROOT_PATH` is the host directory where wiki projects are stored. Inside the web UI, use `/data/wiki` as the parent directory. A project named `PanGu-Wiki` will be stored on the host at `/srv/wiki/PanGu-Wiki` and inside the API container at `/data/wiki/PanGu-Wiki`.
+
+Generated AI images are stored separately from Wiki files. Docker Compose mounts a dedicated `image_assets` volume at `IMAGE_ASSETS_ROOT_PATH_INTERNAL` (default `/data/image-assets`) and the API reads it through `ImageAssets__RootPath`. Back up the `image_assets` volume independently from `WIKI_ROOT_PATH` if you want image materials and Wiki documents on separate retention policies.
 
 For Codex cloud MCP, the default Compose mapping exposes project id `proj_123` as `/data/wiki/PanGu-Wiki`. Create that project first, or change `LlmWikiCloud__Projects__proj_123` in `docker-compose.yml`.
 
