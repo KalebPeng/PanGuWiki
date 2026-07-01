@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { httpDelete, httpGet, httpPost, httpPut } from '../api/dotnet-client'
+import {
+  getImageGenerationConfig,
+  httpDelete,
+  httpGet,
+  httpPost,
+  httpPut,
+  updateImageGenerationConfig,
+  type ImageGenerationConfig,
+} from '../api/dotnet-client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -15,7 +23,7 @@ interface MemberResponse {
 
 type Role = 'admin' | 'editor' | 'viewer'
 
-type TabKey = 'members' | 'roles' | 'modules'
+type TabKey = 'members' | 'roles' | 'modules' | 'image-generation'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -335,6 +343,167 @@ function ModulesTab({ deptId }: ModulesTabProps) {
 
 // ── Embeddable content (no page wrapper) ──────────────────────────────────────
 
+interface ImageGenerationSettingsTabProps {
+  deptId: string
+}
+
+const IMAGE_SIZE_OPTIONS = ['1024x1024', '1024x1536', '1536x1024'] as const
+
+const EMPTY_IMAGE_CONFIG: Omit<ImageGenerationConfig, 'id'> = {
+  enabled: false,
+  base_url: '',
+  has_api_key: false,
+  model: 'gpt-image-1',
+  default_size: '1024x1024',
+}
+
+function ImageGenerationSettingsTab({ deptId }: ImageGenerationSettingsTabProps) {
+  const [config, setConfig] = useState<Omit<ImageGenerationConfig, 'id'> & { id?: string }>(EMPTY_IMAGE_CONFIG)
+  const [apiKey, setApiKey] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadConfig() {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getImageGenerationConfig(deptId)
+        if (!cancelled) setConfig(data)
+      } catch {
+        if (!cancelled) setConfig(EMPTY_IMAGE_CONFIG)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    loadConfig()
+    return () => {
+      cancelled = true
+    }
+  }, [deptId])
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault()
+    setSaving(true)
+    setSaved(false)
+    setError(null)
+    try {
+      const updated = await updateImageGenerationConfig(deptId, {
+        enabled: config.enabled,
+        base_url: config.base_url.trim(),
+        api_key: apiKey.trim() || null,
+        model: config.model.trim() || 'gpt-image-1',
+        default_size: config.default_size,
+      })
+      setConfig(updated)
+      setApiKey('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存图片生成配置失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">加载图片生成配置中...</p>
+  }
+
+  return (
+    <form onSubmit={handleSave} className="space-y-5">
+      <div className="rounded-xl border border-border bg-card px-5 py-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">AI 图片生成</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              配置 OpenAI Images 兼容中转站。生成结果会保存到当前账号的素材库，不会写入 Wiki 文件目录。
+            </p>
+          </div>
+          <label className="flex shrink-0 items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={config.enabled}
+              onChange={(event) => setConfig((current) => ({ ...current, enabled: event.target.checked }))}
+              className="h-4 w-4 rounded border-border"
+            />
+            启用
+          </label>
+        </div>
+
+        <div className="grid gap-4">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">中转站地址</label>
+            <input
+              value={config.base_url}
+              onChange={(event) => setConfig((current) => ({ ...current, base_url: event.target.value }))}
+              placeholder="https://your-relay.example.com"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">模型</label>
+              <input
+                value={config.model}
+                onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))}
+                placeholder="gpt-image-1"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">默认尺寸</label>
+              <select
+                value={config.default_size}
+                onChange={(event) => setConfig((current) => ({ ...current, default_size: event.target.value }))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+              >
+                {IMAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">API Key</label>
+            <input
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              type="password"
+              placeholder={config.has_api_key ? '已保存；留空则继续使用原密钥' : '输入中转站 API Key'}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {config.has_api_key ? '当前已保存密钥。只有填写新密钥时才会覆盖。' : '启用前需要保存一个可用密钥。'}
+            </p>
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-xs font-medium text-destructive">{error}</p>}
+        {saved && <p className="mt-3 text-xs font-medium text-green-600 dark:text-green-400">已保存图片生成配置</p>}
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {saving ? '保存中...' : '保存配置'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 export function DeptSettingsContent({ deptId }: { deptId: string }) {
   const [activeTab, setActiveTab] = useState<TabKey>('members')
   const [members, setMembers] = useState<MemberResponse[]>([])
@@ -361,6 +530,7 @@ export function DeptSettingsContent({ deptId }: { deptId: string }) {
     { key: 'members', label: '成员管理' },
     { key: 'roles', label: '角色分配' },
     { key: 'modules', label: '模块开关' },
+    { key: 'image-generation', label: 'AI 图片生成' },
   ]
 
   return (
@@ -389,6 +559,7 @@ export function DeptSettingsContent({ deptId }: { deptId: string }) {
         <RolesTab deptId={deptId} members={members} loading={membersLoading} error={membersError} onReload={loadMembers} />
       )}
       {activeTab === 'modules' && <ModulesTab deptId={deptId} />}
+      {activeTab === 'image-generation' && <ImageGenerationSettingsTab deptId={deptId} />}
     </>
   )
 }
