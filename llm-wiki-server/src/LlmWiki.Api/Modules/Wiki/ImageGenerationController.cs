@@ -62,32 +62,34 @@ public class ImageGenerationController(
     public async Task<IActionResult> UpsertConfig(Guid deptId, [FromBody] UpsertImageGenerationConfigRequest request, CancellationToken ct)
     {
         var existing = await db.ImageGenerationConfigs
-            .Where(c => c.DepartmentId == deptId && c.IsActive)
+            .Where(c => c.DepartmentId == deptId)
+            .OrderByDescending(c => c.IsActive)
+            .ThenByDescending(c => c.UpdatedAt)
             .FirstOrDefaultAsync(ct);
         var preservedKey = string.IsNullOrEmpty(request.ApiKey)
             ? existing?.EncryptedApiKey ?? string.Empty
             : configService.EncryptIfNotEmpty(request.ApiKey);
 
-        if (existing is not null)
-        {
-            existing.IsActive = false;
-        }
-
         var now = DateTime.UtcNow;
-        var config = new ImageGenerationConfig
+        var config = existing ?? new ImageGenerationConfig
         {
             Id = Guid.NewGuid(),
             DepartmentId = deptId,
-            BaseUrl = request.BaseUrl,
-            EncryptedApiKey = preservedKey,
-            Model = request.Model,
-            DefaultSize = request.DefaultSize,
-            IsActive = request.Enabled,
             CreatedAt = now,
-            UpdatedAt = now,
         };
 
-        db.ImageGenerationConfigs.Add(config);
+        config.BaseUrl = request.BaseUrl;
+        config.EncryptedApiKey = preservedKey;
+        config.Model = request.Model;
+        config.DefaultSize = request.DefaultSize;
+        config.IsActive = request.Enabled;
+        config.UpdatedAt = now;
+
+        if (existing is null)
+        {
+            db.ImageGenerationConfigs.Add(config);
+        }
+
         await db.SaveChangesAsync(ct);
         return Ok(ToConfigResponse(config));
     }
@@ -124,6 +126,10 @@ public class ImageGenerationController(
         try
         {
             payloads = await imagesClient.GenerateAsync(config.BaseUrl, apiKey, model, prompt, size, n, ct);
+        }
+        catch (ImageGenerationRelayException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
         }
         catch (InvalidOperationException ex)
         {

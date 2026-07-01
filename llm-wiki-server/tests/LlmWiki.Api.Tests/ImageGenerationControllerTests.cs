@@ -81,6 +81,40 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task ConfigPut_PreservesApiKey_WhenDisabledThenReenabledWithBlankKey()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+
+        await PutConfig(client, deptId);
+
+        var disable = await client.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
+        {
+            enabled = false,
+            base_url = "https://relay.example.com",
+            api_key = "",
+            model = "gpt-image-1",
+            default_size = "1024x1024",
+        });
+        disable.EnsureSuccessStatusCode();
+
+        var reenable = await client.PutAsJsonAsync($"/api/departments/{deptId}/image-generation/config", new
+        {
+            enabled = true,
+            base_url = "https://relay.example.com",
+            api_key = "",
+            model = "gpt-image-1",
+            default_size = "1024x1024",
+        });
+        reenable.EnsureSuccessStatusCode();
+
+        var get = await client.GetAsync($"/api/departments/{deptId}/image-generation/config");
+        get.EnsureSuccessStatusCode();
+        var json = await get.Content.ReadAsStringAsync();
+        Assert.Contains("\"has_api_key\":true", json);
+    }
+
+    [Fact]
     public async Task Generate_ReturnsBadRequest_WhenConfigMissing()
     {
         await using var factory = new TestWebApplicationFactory();
@@ -95,6 +129,73 @@ public class ImageGenerationControllerTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         Assert.Contains("config", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Generate_ReturnsBadGateway_WhenRelayReturnsInvalidJson()
+    {
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("not-json", Encoding.UTF8, "application/json"),
+            }),
+        };
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId);
+
+        var response = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "A quiet product photo",
+            n = 1,
+        });
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("relay", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Generate_ReturnsBadGateway_WhenRelayImageDownloadIsTooLarge()
+    {
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                if (request.Method == HttpMethod.Get)
+                {
+                    var content = new ByteArrayContent([]);
+                    content.Headers.ContentLength = 10L * 1024 * 1024 + 1;
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { url = "https://relay.example.com/generated.png" },
+                        },
+                    }),
+                };
+            }),
+        };
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId);
+
+        var response = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "A quiet product photo",
+            n = 1,
+        });
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(0, await db.GeneratedImages.CountAsync(i => i.DepartmentId == deptId));
     }
 
     [Fact]
