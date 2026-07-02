@@ -124,10 +124,6 @@ public class ImageGenerationController(
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .Select(url => url.Trim())
             .ToList() ?? [];
-        if (model.StartsWith("vidu/", StringComparison.OrdinalIgnoreCase) && imageUrls.Count == 0)
-        {
-            return BadRequest(new { error = "Vidu image models require at least one reference image URL." });
-        }
         var apiKey = configService.DecryptIfNotEmpty(config.EncryptedApiKey);
 
         IReadOnlyList<GeneratedImagePayload> payloads;

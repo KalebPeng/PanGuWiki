@@ -376,21 +376,44 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
-    public async Task Generate_WithViduImageModel_ReturnsBadRequest_WhenReferenceImagesMissing()
+    public async Task Generate_WithViduImageModel_SendsEmptyReferenceImages_WhenReferenceImagesMissing()
     {
-        await using var factory = new TestWebApplicationFactory();
+        var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                using var json = JsonDocument.Parse(body);
+                var root = json.RootElement;
+                Assert.Equal("vidu/image-2", root.GetProperty("model").GetString());
+                Assert.Equal("Same style, different background", root.GetProperty("prompt").GetString());
+                Assert.Equal("1:1", root.GetProperty("size").GetString());
+                Assert.False(root.TryGetProperty("n", out _));
+                Assert.Equal(0, root.GetProperty("images").GetArrayLength());
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { b64_json = Convert.ToBase64String(expectedBytes) },
+                        },
+                    }),
+                };
+            }),
+        };
         var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
         await PutConfig(client, deptId, model: "vidu/image-2");
 
-        var response = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        var generate = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
         {
             prompt = "Same style, different background",
             size = "1024x1024",
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        Assert.Contains("reference image", json, StringComparison.OrdinalIgnoreCase);
+        generate.EnsureSuccessStatusCode();
     }
 
     [Fact]

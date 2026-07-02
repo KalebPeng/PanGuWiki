@@ -300,8 +300,7 @@ export function ImageGenerationPage({ deptId }: Props) {
     !!config &&
     !loading &&
     !generating &&
-    !configProblem &&
-    (!isViduModel || referenceImages.length > 0)
+    !configProblem
 
   useEffect(() => {
     objectUrlsRef.current = objectUrls
@@ -609,7 +608,7 @@ export function ImageGenerationPage({ deptId }: Props) {
                       className="min-h-[76px] w-full resize-y rounded-lg border border-[#E2E2DF] bg-white px-3 py-2.5 text-[13.5px] leading-relaxed text-[#1A1A2E] outline-none transition-colors placeholder:text-[#B5B5BB] focus:border-[#B8B8B2] focus:ring-3 focus:ring-[#EDEDEB]"
                     />
                     <p className="text-[12px] leading-relaxed text-[#8E8E94]">
-                      Vidu 图片模型需要至少一张参考图；多张可换行或用逗号分隔。
+                      留空为文生图；填写图片地址为图生图，多张可换行或用逗号分隔。
                     </p>
                   </div>
                 )}
