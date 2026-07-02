@@ -376,6 +376,53 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task Generate_WithMultipartReferenceImage_SendsDataUrlReferenceImage()
+    {
+        var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                using var json = JsonDocument.Parse(body);
+                var root = json.RootElement;
+                Assert.Equal("vidu/image-2", root.GetProperty("model").GetString());
+                Assert.Equal("Same style, different background", root.GetProperty("prompt").GetString());
+                Assert.Equal("1:1", root.GetProperty("size").GetString());
+                Assert.False(root.TryGetProperty("n", out _));
+                Assert.Equal(
+                    "data:image/png;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes("reference-bytes")),
+                    root.GetProperty("images")[0].GetString());
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { b64_json = Convert.ToBase64String(expectedBytes) },
+                        },
+                    }),
+                };
+            }),
+        };
+        var (client, deptId, _) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId, model: "vidu/image-2");
+
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent("Same style, different background"), "prompt");
+        form.Add(new StringContent("1024x1024"), "size");
+        form.Add(new ByteArrayContent(Encoding.UTF8.GetBytes("reference-bytes"))
+        {
+            Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png") },
+        }, "images", "reference.png");
+
+        var generate = await client.PostAsync($"/api/departments/{deptId}/images/generate", form);
+
+        generate.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task Generate_WithViduImageModel_SendsEmptyReferenceImages_WhenReferenceImagesMissing()
     {
         var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");

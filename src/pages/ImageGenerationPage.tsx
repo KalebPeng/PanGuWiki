@@ -160,13 +160,6 @@ function parseSize(size: string): { width: number; height: number } {
   }
 }
 
-function parseReferenceImageUrls(value: string): string[] {
-  return value
-    .split(/[\n,]+/)
-    .map((url) => url.trim())
-    .filter(Boolean)
-}
-
 function aspectRatioClass(size: string): string {
   const { width, height } = parseSize(size)
   if (height > width) return "aspect-[2/3]"
@@ -277,7 +270,7 @@ export function ImageGenerationPage({ deptId }: Props) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [size, setSize] = useState<string>("1024x1024")
   const [count, setCount] = useState(1)
-  const [referenceImageUrls, setReferenceImageUrls] = useState("")
+  const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -294,7 +287,6 @@ export function ImageGenerationPage({ deptId }: Props) {
     [config, configChecked]
   )
   const isViduModel = config?.model.toLowerCase().startsWith("vidu/") ?? false
-  const referenceImages = useMemo(() => parseReferenceImageUrls(referenceImageUrls), [referenceImageUrls])
   const canGenerate =
     prompt.trim().length > 0 &&
     !!config &&
@@ -426,7 +418,7 @@ export function ImageGenerationPage({ deptId }: Props) {
         prompt: trimmedPrompt,
         size,
         n: clampImageCount(count),
-        images: referenceImages,
+        image_files: referenceImageFiles,
       })
       if (!mountedRef.current || deptIdRef.current !== requestDeptId || generateRequestRef.current !== requestId) return
       setAssets((current) => mergeGeneratedImageAssets(current, response.images))
@@ -598,17 +590,26 @@ export function ImageGenerationPage({ deptId }: Props) {
 
                 {isViduModel && (
                   <div className="space-y-2">
-                    <Label htmlFor="reference-images" className="text-[#1A1A2E]">参考图 URL</Label>
-                    <textarea
+                    <Label htmlFor="reference-images" className="text-[#1A1A2E]">参考图</Label>
+                    <input
                       id="reference-images"
-                      value={referenceImageUrls}
-                      onChange={(event) => setReferenceImageUrls(event.target.value)}
-                      placeholder="https://example.com/ref.jpg"
-                      rows={3}
-                      className="min-h-[76px] w-full resize-y rounded-lg border border-[#E2E2DF] bg-white px-3 py-2.5 text-[13.5px] leading-relaxed text-[#1A1A2E] outline-none transition-colors placeholder:text-[#B5B5BB] focus:border-[#B8B8B2] focus:ring-3 focus:ring-[#EDEDEB]"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      onChange={(event) => setReferenceImageFiles(Array.from(event.target.files ?? []))}
+                      className="block w-full rounded-lg border border-[#E2E2DF] bg-white px-3 py-2 text-[13px] text-[#1A1A2E] file:mr-3 file:rounded-md file:border-0 file:bg-[#EDEDEB] file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-[#1A1A2E] hover:file:bg-[#E2E2DF] focus:border-[#B8B8B2] focus:outline-none focus:ring-3 focus:ring-[#EDEDEB]"
                     />
+                    {referenceImageFiles.length > 0 && (
+                      <div className="space-y-1 rounded-lg border border-[#EDEDEB] bg-white px-3 py-2">
+                        {referenceImageFiles.map((file) => (
+                          <div key={`${file.name}-${file.size}-${file.lastModified}`} className="truncate text-[12px] text-[#5C5C66]">
+                            {file.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-[12px] leading-relaxed text-[#8E8E94]">
-                      留空为文生图；填写图片地址为图生图，多张可换行或用逗号分隔。
+                      留空为文生图；上传本地图片为图生图，支持 PNG、JPG、WEBP。
                     </p>
                   </div>
                 )}

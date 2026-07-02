@@ -198,6 +198,30 @@ describe('dotnet-client', () => {
     expect(contentUrl).not.toContain('token=')
   })
 
+  it('generates images with local reference files as multipart form data', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ images: [] }), { status: 200 })
+    )
+    const file = new File(['png-bytes'], 'reference.png', { type: 'image/png' })
+
+    await generateDepartmentImages('dept-1', {
+      prompt: 'Same style, different background',
+      size: '1:1',
+      n: 1,
+      image_files: [file],
+    })
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    expect(init).toEqual(expect.objectContaining({ method: 'POST' }))
+    expect(init?.headers).toEqual({})
+    expect(init?.body).toBeInstanceOf(FormData)
+    const form = init?.body as FormData
+    expect(form.get('prompt')).toBe('Same style, different background')
+    expect(form.get('size')).toBe('1:1')
+    expect(form.get('n')).toBe('1')
+    expect(form.get('images')).toBe(file)
+  })
+
   it('fetches image asset content with bearer auth', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key: string) => (
       key === 'llmwiki:auth:token' ? 'access-token' : null

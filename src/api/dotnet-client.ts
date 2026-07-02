@@ -161,6 +161,7 @@ export interface GenerateImagesRequest {
   size?: string | null
   n?: number | null
   images?: string[] | null
+  image_files?: File[] | null
 }
 
 export interface GeneratedImageAsset {
@@ -209,10 +210,47 @@ export async function updateImageGenerationConfig(
   return stripConfigSecret(config)
 }
 
+async function httpPostForm<T>(path: string, body: FormData): Promise<T> {
+  let res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { ...getAuthHeader() },
+    body,
+  })
+  if (res.status === 401) {
+    const newToken = await tryRefreshToken()
+    if (newToken) {
+      res = await fetch(`${BASE_URL}${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${newToken}` },
+        body,
+      })
+    }
+    if (res.status === 401) {
+      handleUnauthorized()
+      throw new Error('Unauthorized')
+    }
+  }
+  if (!res.ok) throw new Error(await parseError(res))
+  return parseBody<T>(res)
+}
+
 export function generateDepartmentImages(
   deptId: string,
   request: GenerateImagesRequest
 ): Promise<GeneratedImagesResponse> {
+  const imageFiles = request.image_files?.filter(Boolean) ?? []
+  if (imageFiles.length > 0) {
+    const form = new FormData()
+    form.append('prompt', request.prompt)
+    if (request.model) form.append('model', request.model)
+    if (request.size) form.append('size', request.size)
+    if (request.n != null) form.append('n', String(request.n))
+    for (const file of imageFiles) {
+      form.append('images', file)
+    }
+    return httpPostForm<GeneratedImagesResponse>(generatedImagesPath(deptId, '/generate'), form)
+  }
+
   return httpPost<GeneratedImagesResponse>(generatedImagesPath(deptId, '/generate'), request)
 }
 

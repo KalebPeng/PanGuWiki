@@ -25,6 +25,15 @@ public record ImageGenerationConfigResponse(
 
 public record GenerateImagesRequest(string Prompt, string? Model, string? Size, int? N, IReadOnlyList<string>? Images);
 
+public class GenerateImagesFormRequest
+{
+    public string Prompt { get; set; } = string.Empty;
+    public string? Model { get; set; }
+    public string? Size { get; set; }
+    public int? N { get; set; }
+    public List<IFormFile> Images { get; set; } = [];
+}
+
 public record GeneratedImageResponse(
     Guid Id,
     string Prompt,
@@ -46,6 +55,8 @@ public class ImageGenerationController(
     OpenAiImagesClient imagesClient,
     ImageAssetStorage assetStorage) : ControllerBase
 {
+    private const long MaxReferenceImageBytes = 10L * 1024 * 1024;
+
     [HttpGet("api/departments/{deptId:guid}/image-generation/config")]
     [RequireDeptRole]
     public async Task<IActionResult> GetConfig(Guid deptId, CancellationToken ct)
@@ -95,10 +106,57 @@ public class ImageGenerationController(
     }
 
     [HttpPost("api/departments/{deptId:guid}/images/generate")]
+    [Consumes("application/json")]
     [RequireDeptRole]
     public async Task<IActionResult> Generate(Guid deptId, [FromBody] GenerateImagesRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Prompt))
+        var imageInputs = request.Images?
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url.Trim())
+            .ToList() ?? [];
+
+        return await GenerateCore(deptId, request.Prompt, request.Model, request.Size, request.N, imageInputs, ct);
+    }
+
+    [HttpPost("api/departments/{deptId:guid}/images/generate")]
+    [Consumes("multipart/form-data")]
+    [RequireDeptRole]
+    public async Task<IActionResult> GenerateFromForm(Guid deptId, [FromForm] GenerateImagesFormRequest request, CancellationToken ct)
+    {
+        var imageInputs = new List<string>();
+        foreach (var file in request.Images)
+        {
+            if (file.Length == 0) continue;
+            if (file.Length > MaxReferenceImageBytes)
+            {
+                return BadRequest(new { error = "Reference image is too large." });
+            }
+
+            var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+            if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { error = "Reference files must be images." });
+            }
+
+            await using var stream = file.OpenReadStream();
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer, ct);
+            imageInputs.Add($"data:{contentType};base64,{Convert.ToBase64String(buffer.ToArray())}");
+        }
+
+        return await GenerateCore(deptId, request.Prompt, request.Model, request.Size, request.N, imageInputs, ct);
+    }
+
+    private async Task<IActionResult> GenerateCore(
+        Guid deptId,
+        string promptValue,
+        string? modelValue,
+        string? sizeValue,
+        int? nValue,
+        IReadOnlyList<string> imageInputs,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(promptValue))
         {
             return BadRequest(new { error = "Prompt is required." });
         }
@@ -116,20 +174,16 @@ public class ImageGenerationController(
             return BadRequest(new { error = "Image generation API key is not configured." });
         }
 
-        var n = Math.Clamp(request.N ?? 1, 1, 4);
-        var model = string.IsNullOrWhiteSpace(request.Model) ? config.Model : request.Model.Trim();
-        var size = string.IsNullOrWhiteSpace(request.Size) ? config.DefaultSize : request.Size.Trim();
-        var prompt = request.Prompt.Trim();
-        var imageUrls = request.Images?
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Select(url => url.Trim())
-            .ToList() ?? [];
+        var n = Math.Clamp(nValue ?? 1, 1, 4);
+        var model = string.IsNullOrWhiteSpace(modelValue) ? config.Model : modelValue.Trim();
+        var size = string.IsNullOrWhiteSpace(sizeValue) ? config.DefaultSize : sizeValue.Trim();
+        var prompt = promptValue.Trim();
         var apiKey = configService.DecryptIfNotEmpty(config.EncryptedApiKey);
 
         IReadOnlyList<GeneratedImagePayload> payloads;
         try
         {
-            payloads = await imagesClient.GenerateAsync(config.BaseUrl, apiKey, model, prompt, size, n, imageUrls, ct);
+            payloads = await imagesClient.GenerateAsync(config.BaseUrl, apiKey, model, prompt, size, n, imageInputs, ct);
         }
         catch (ImageGenerationRelayException ex)
         {
