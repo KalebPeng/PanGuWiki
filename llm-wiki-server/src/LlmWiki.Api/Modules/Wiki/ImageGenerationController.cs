@@ -5,6 +5,7 @@ using LlmWiki.Api.Modules.Wiki.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 
 namespace LlmWiki.Api.Modules.Wiki;
 
@@ -23,7 +24,14 @@ public record ImageGenerationConfigResponse(
     string Model,
     string DefaultSize);
 
-public record GenerateImagesRequest(string Prompt, string? Model, string? Size, int? N, IReadOnlyList<string>? Images);
+public record GenerateImagesRequest(
+    string Prompt,
+    string? Model,
+    string? Size,
+    int? N,
+    IReadOnlyList<string>? Images,
+    [property: JsonPropertyName("image_asset_ids")]
+    IReadOnlyList<Guid>? ImageAssetIds);
 
 public class GenerateImagesFormRequest
 {
@@ -31,6 +39,8 @@ public class GenerateImagesFormRequest
     public string? Model { get; set; }
     public string? Size { get; set; }
     public int? N { get; set; }
+    [FromForm(Name = "image_asset_ids")]
+    public List<Guid> ImageAssetIds { get; set; } = [];
     public List<IFormFile> Images { get; set; } = [];
 }
 
@@ -115,6 +125,17 @@ public class ImageGenerationController(
             .Select(url => url.Trim())
             .ToList() ?? [];
 
+        IReadOnlyList<string> assetInputs;
+        try
+        {
+            assetInputs = await LoadReferenceAssetInputs(deptId, request.ImageAssetIds ?? [], ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        imageInputs.AddRange(assetInputs);
+
         return await GenerateCore(deptId, request.Prompt, request.Model, request.Size, request.N, imageInputs, ct);
     }
 
@@ -144,7 +165,47 @@ public class ImageGenerationController(
             imageInputs.Add($"data:{contentType};base64,{Convert.ToBase64String(buffer.ToArray())}");
         }
 
+        IReadOnlyList<string> assetInputs;
+        try
+        {
+            assetInputs = await LoadReferenceAssetInputs(deptId, request.ImageAssetIds, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        imageInputs.AddRange(assetInputs);
+
         return await GenerateCore(deptId, request.Prompt, request.Model, request.Size, request.N, imageInputs, ct);
+    }
+
+    private async Task<IReadOnlyList<string>> LoadReferenceAssetInputs(
+        Guid deptId,
+        IReadOnlyList<Guid> imageAssetIds,
+        CancellationToken ct)
+    {
+        var ids = imageAssetIds.Where(id => id != Guid.Empty).Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var assets = await db.GeneratedImages
+            .Where(i => i.DepartmentId == deptId && i.UserId == currentUser.UserId && ids.Contains(i.Id))
+            .ToListAsync(ct);
+        if (assets.Count != ids.Count)
+        {
+            throw new InvalidOperationException("Reference image asset was not found.");
+        }
+
+        var inputs = new List<string>();
+        foreach (var asset in assets)
+        {
+            var (bytes, mimeType) = await assetStorage.ReadAsync(asset.FilePath, ct);
+            inputs.Add($"data:{mimeType};base64,{Convert.ToBase64String(bytes)}");
+        }
+
+        return inputs;
     }
 
     private async Task<IActionResult> GenerateCore(

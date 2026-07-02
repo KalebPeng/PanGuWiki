@@ -208,6 +208,7 @@ describe('dotnet-client', () => {
       prompt: 'Same style, different background',
       size: '1:1',
       n: 1,
+      image_asset_ids: ['asset-1'],
       image_files: [file],
     })
 
@@ -219,6 +220,7 @@ describe('dotnet-client', () => {
     expect(form.get('prompt')).toBe('Same style, different background')
     expect(form.get('size')).toBe('1:1')
     expect(form.get('n')).toBe('1')
+    expect(form.get('image_asset_ids')).toBe('asset-1')
     expect(form.get('images')).toBe(file)
   })
 

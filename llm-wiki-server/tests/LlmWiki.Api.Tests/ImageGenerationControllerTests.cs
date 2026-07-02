@@ -423,6 +423,69 @@ public class ImageGenerationControllerTests
     }
 
     [Fact]
+    public async Task Generate_WithReferenceImageAssetId_SendsAssetAsDataUrlReferenceImage()
+    {
+        var referenceBytes = Encoding.UTF8.GetBytes("asset-reference-bytes");
+        var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");
+        await using var factory = new TestWebApplicationFactory
+        {
+            OpenAiImagesHandler = new StubHttpMessageHandler(request =>
+            {
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                using var json = JsonDocument.Parse(body);
+                var root = json.RootElement;
+                Assert.Equal("vidu/image-2", root.GetProperty("model").GetString());
+                Assert.Equal(
+                    "data:image/png;base64," + Convert.ToBase64String(referenceBytes),
+                    root.GetProperty("images")[0].GetString());
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        data = new[]
+                        {
+                            new { b64_json = Convert.ToBase64String(expectedBytes) },
+                        },
+                    }),
+                };
+            }),
+        };
+        var (client, deptId, ownerId) = await CreateAuthenticatedDepartmentClient(factory, "admin");
+        await PutConfig(client, deptId, model: "vidu/image-2");
+        var referenceId = Guid.NewGuid();
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var storage = scope.ServiceProvider.GetRequiredService<LlmWiki.Api.Infrastructure.ImageAssets.ImageAssetStorage>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var path = await storage.SaveAsync(deptId, ownerId, referenceId, "image/png", referenceBytes, CancellationToken.None);
+            db.GeneratedImages.Add(new GeneratedImage
+            {
+                Id = referenceId,
+                DepartmentId = deptId,
+                UserId = ownerId,
+                Prompt = "Reference asset",
+                Model = "vidu/image-2",
+                Size = "1:1",
+                FilePath = path,
+                MimeType = "image/png",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var generate = await client.PostAsJsonAsync($"/api/departments/{deptId}/images/generate", new
+        {
+            prompt = "Same style, different background",
+            size = "1024x1024",
+            image_asset_ids = new[] { referenceId },
+        });
+
+        generate.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task Generate_WithViduImageModel_SendsEmptyReferenceImages_WhenReferenceImagesMissing()
     {
         var expectedBytes = Encoding.UTF8.GetBytes("png-bytes");

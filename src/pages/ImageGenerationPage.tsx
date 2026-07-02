@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   AlertCircle,
+  Check,
   Download,
   Eye,
   ImageIcon,
@@ -271,6 +272,7 @@ export function ImageGenerationPage({ deptId }: Props) {
   const [size, setSize] = useState<string>("1024x1024")
   const [count, setCount] = useState(1)
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([])
+  const [selectedReferenceAssetIds, setSelectedReferenceAssetIds] = useState<Set<string>>(() => new Set())
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -287,6 +289,10 @@ export function ImageGenerationPage({ deptId }: Props) {
     [config, configChecked]
   )
   const isViduModel = config?.model.toLowerCase().startsWith("vidu/") ?? false
+  const selectedReferenceAssetIdList = useMemo(
+    () => Array.from(selectedReferenceAssetIds),
+    [selectedReferenceAssetIds]
+  )
   const canGenerate =
     prompt.trim().length > 0 &&
     !!config &&
@@ -313,7 +319,16 @@ export function ImageGenerationPage({ deptId }: Props) {
     deptIdRef.current = deptId
     refreshRequestRef.current += 1
     generateRequestRef.current += 1
+    setSelectedReferenceAssetIds(new Set())
   }, [deptId])
+
+  useEffect(() => {
+    const assetIds = new Set(assets.map((asset) => asset.id))
+    setSelectedReferenceAssetIds((current) => {
+      const next = new Set(Array.from(current).filter((id) => assetIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [assets])
 
   useEffect(() => {
     let cancelled = false
@@ -418,6 +433,7 @@ export function ImageGenerationPage({ deptId }: Props) {
         prompt: trimmedPrompt,
         size,
         n: clampImageCount(count),
+        image_asset_ids: selectedReferenceAssetIdList,
         image_files: referenceImageFiles,
       })
       if (!mountedRef.current || deptIdRef.current !== requestDeptId || generateRequestRef.current !== requestId) return
@@ -441,6 +457,11 @@ export function ImageGenerationPage({ deptId }: Props) {
       await deleteGeneratedImageAsset(requestDeptId, asset.id)
       if (!mountedRef.current || deptIdRef.current !== requestDeptId) return
       setPreviewAsset((current) => (current?.id === asset.id ? null : current))
+      setSelectedReferenceAssetIds((current) => {
+        const next = new Set(current)
+        next.delete(asset.id)
+        return next
+      })
       setAssets((current) => current.filter((item) => item.id !== asset.id))
     } catch (err) {
       if (!mountedRef.current || deptIdRef.current !== requestDeptId) return
@@ -465,6 +486,18 @@ export function ImageGenerationPage({ deptId }: Props) {
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
+  }
+
+  function toggleReferenceAsset(assetId: string) {
+    setSelectedReferenceAssetIds((current) => {
+      const next = new Set(current)
+      if (next.has(assetId)) {
+        next.delete(assetId)
+      } else {
+        next.add(assetId)
+      }
+      return next
+    })
   }
 
   return (
@@ -611,6 +644,55 @@ export function ImageGenerationPage({ deptId }: Props) {
                     <p className="text-[12px] leading-relaxed text-[#8E8E94]">
                       留空为文生图；上传本地图片为图生图，支持 PNG、JPG、WEBP。
                     </p>
+                    {assets.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[12px] font-medium text-[#5C5C66]">从素材库选择</div>
+                          {selectedReferenceAssetIds.size > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedReferenceAssetIds(new Set())}
+                              className="text-[12px] text-[#8E8E94] hover:text-[#1A1A2E]"
+                            >
+                              清空
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid max-h-[220px] grid-cols-3 gap-2 overflow-y-auto rounded-lg border border-[#EDEDEB] bg-white p-2">
+                          {assets.map((asset) => {
+                            const selected = selectedReferenceAssetIds.has(asset.id)
+                            const imageUrl = objectUrls[asset.id]
+                            return (
+                              <button
+                                key={asset.id}
+                                type="button"
+                                onClick={() => toggleReferenceAsset(asset.id)}
+                                className={`relative aspect-square overflow-hidden rounded-lg border bg-[#FAFAF9] transition ${
+                                  selected
+                                    ? "border-[#1A1A2E] ring-2 ring-[#1A1A2E]/15"
+                                    : "border-[#EDEDEB] hover:border-[#B8B8B2]"
+                                }`}
+                                aria-pressed={selected}
+                                title="选择为参考图"
+                              >
+                                {imageUrl ? (
+                                  <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <span className="flex h-full w-full items-center justify-center text-[#B5B5BB]">
+                                    <ImageIcon className="h-4 w-4" />
+                                  </span>
+                                )}
+                                {selected && (
+                                  <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#1A1A2E] text-white shadow-sm">
+                                    <Check className="h-3.5 w-3.5" />
+                                  </span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

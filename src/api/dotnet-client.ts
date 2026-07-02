@@ -161,6 +161,7 @@ export interface GenerateImagesRequest {
   size?: string | null
   n?: number | null
   images?: string[] | null
+  image_asset_ids?: string[] | null
   image_files?: File[] | null
 }
 
@@ -245,6 +246,9 @@ export function generateDepartmentImages(
     if (request.model) form.append('model', request.model)
     if (request.size) form.append('size', request.size)
     if (request.n != null) form.append('n', String(request.n))
+    for (const imageAssetId of request.image_asset_ids ?? []) {
+      if (imageAssetId) form.append('image_asset_ids', imageAssetId)
+    }
     for (const file of imageFiles) {
       form.append('images', file)
     }
